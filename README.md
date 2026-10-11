@@ -34,7 +34,7 @@ s.sql("select count(*) from asset").fetchall()
 | Date validation, download, safe unzip, DuckDB views, schema discovery | Implemented, unit-tested against **fake** HTTP and **synthetic** Parquet |
 | Run against a real Collibra environment | **Done once** (training instance, snapshot 2026-10-10): download + explore of all 8 tables worked |
 | Column-level schema | Observed and documented in `docs/data-modeling.md`; still **discovered at runtime**, not hardcoded |
-| Table grain / hierarchy / relation direction | Inferred from column names; verify with the `query` command (see `docs/data-modeling.md` §5) |
+| Table grain, relation direction, community repeats | **Verified** on the real snapshot. Still open: `attribute.kind` → value column mapping, meaning of `community.level` (`docs/data-modeling.md` §5) |
 | Star-schema views + `check` | Implemented (`model.py`), tested on **synthetic** data with real column names; not yet run on the real snapshot |
 
 Requires Collibra Platform 5.7+ and a Collibra Insights licence. Snapshots may contain sensitive governance data and are git-ignored.
