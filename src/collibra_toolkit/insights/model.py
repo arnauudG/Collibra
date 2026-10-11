@@ -35,7 +35,7 @@ _VIEWS = [
         SELECT a.snapshot_date, a.asset_id, a.asset_full_name, a.asset_display_name,
                a.asset_type_id, a.asset_type_name, a.status_id, a.status_name,
                a.articulation, a.ratings_average, a.ratings_count, a.is_asset_system,
-               a.creation_date, a.edited_date,
+               a.creation_date, a.edited_date, a.creator_username, a.editor_username,
                a.domain_id, d.domain_name, d.domain_type_name, d.community_id, d.community_name,
                (d.domain_id IS NULL) AS is_domain_missing
         FROM asset a

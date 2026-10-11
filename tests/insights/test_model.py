@@ -29,7 +29,7 @@ def snap(tmp_path):
         is_domain_system=False, community_id="c1")])
     base = dict(asset_full_name="f", asset_display_name="n", asset_type_id="at", asset_type_name="Term",
                 status_id="s", status_name="Approved", articulation=1.0, ratings_average=0.0, ratings_count=0,
-                is_asset_system=False, creation_date=None, edited_date=None)
+                is_asset_system=False, creation_date=None, edited_date=None, creator_username="jdoe", editor_username="jdoe")
     _write(tmp_path, "asset", [dict(asset_id="a1", domain_id="d1", **base), dict(asset_id="a2", domain_id="gone", **base)])
     _write(tmp_path, "asset_tag", [dict(asset_id="a1", tag_id="t1", tag_name="pii")])
     _write(tmp_path, "attribute", [

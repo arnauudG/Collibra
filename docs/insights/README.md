@@ -9,13 +9,14 @@ This documentation is **instance-independent**: it explains Insights in general 
 | # | Document | Read it to… | Time |
 |---|---|---|---|
 | 1 | [Overview](overview.md) | understand what it is, delivery, retention | 5 min |
-| 2 | [Data dictionary](data-dictionary.md) | know every table and column, keys, how they join | 15 min |
-| 3 | [Known gaps](known-gaps.md) | avoid wrong totals: what the export omits and why | 10 min |
-| 4 | [Modeling guide](modeling.md) | understand the star schema and why | 10 min |
-| 5 | [Cookbook](cookbook.md) | answer real questions with tested SQL | as needed |
+| 2 | [Use cases](use-cases.md) | see which business questions and decisions Insights supports, and which it cannot | 10 min |
+| 3 | [Data dictionary](data-dictionary.md) | know every table and column, keys, how they join | 15 min |
+| 4 | [Known gaps](known-gaps.md) | avoid wrong totals: what the export omits and why | 10 min |
+| 5 | [Modeling guide](modeling.md) | understand the star schema and why | 10 min |
+| 6 | [Cookbook](cookbook.md) | answer real questions with tested SQL | as needed |
 | ★ | [Client playbook](client-playbook.md) | apply all of this at a new client, step by step | 1 hour |
 
-**Just want an answer?** Jump to the [cookbook](cookbook.md), but read each "Watch out".
+**Just want an answer?** Jump to the [cookbook](cookbook.md) (28 tested recipes), but read each "Watch out". **Wondering what this is good for?** Start with [use cases](use-cases.md).
 
 ## Five things to remember
 

@@ -46,7 +46,7 @@ Why a star? "How many Business Terms per domain, owned by whom, with or without 
 
 **f) Responsibilities need care.** Interpret with the rules in [known-gaps.md](known-gaps.md): asset-level and domain-inherited ownership are present, community-inherited is not, null means global. Use `asset_resolution = 'in_export'` for "who owns what".
 
-**g) Direct and inherited responsibilities are indistinguishable.** One domain-level assignment is expanded into a row per asset of the domain. Count *distinct people per asset* rather than rows per person, or use cookbook recipe 22 to find assignments that cover a whole domain.
+**g) Direct and inherited responsibilities are indistinguishable.** One domain-level assignment is expanded into a row per asset of the domain. Count *distinct people per asset* rather than rows per person, or use the cookbook recipe *Which responsibilities look like domain-level assignments?* to find assignments that cover a whole domain.
 
 **h) Privacy.** `responsibility` and `view_events` hold personal data (names, emails, usernames, sessions). `dim_user` omits names and email unless you ask (`build_model(snapshot, include_pii=True)`).
 

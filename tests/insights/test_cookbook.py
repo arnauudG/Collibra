@@ -28,3 +28,17 @@ def test_recipes_return_sensible_rows_on_fixture(snap):  # noqa: F811
     assert inventory == [("Term", "Approved", 2)]
     tree = snap.sql(BLOCKS[2]).fetchall()
     assert tree == [("Root", 2, "Parent > Root")]
+
+
+def _slug(heading: str) -> str:
+    """GitHub-style heading anchor."""
+    return re.sub(r"[^\w\- ]", "", heading.lower()).replace(" ", "-")
+
+
+def test_use_case_links_point_at_real_recipes():
+    anchors = {_slug(h) for h in re.findall(r"^### (.+)$", COOKBOOK.read_text(), flags=re.M)}
+    page = (COOKBOOK.parent / "use-cases.md").read_text()
+    links = re.findall(r"\(cookbook\.md#([^)]+)\)", page)
+    assert len(links) >= 20
+    missing = [a for a in links if a not in anchors]
+    assert not missing, f"stale recipe links: {missing}"

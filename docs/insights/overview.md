@@ -35,4 +35,4 @@ See [known-gaps.md](known-gaps.md): excluded types, community-inherited responsi
 
 ## Where to go next
 
-New to a client? Follow the [client playbook](client-playbook.md).
+What can you decide with it? See [use-cases.md](use-cases.md). New to a client? Follow the [client playbook](client-playbook.md).
