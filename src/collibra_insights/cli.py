@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import argparse
-import os
 
-from .client import CollibraClient
 from .explore import Snapshot
+from .insights import InsightsClient
 from .model import build_model, check_model
 
 
@@ -42,12 +41,7 @@ def main(argv: list[str] | None = None) -> None:
         return
 
     if args.cmd == "download":
-        client = CollibraClient(
-            os.environ["COLLIBRA_URL"],
-            username=os.environ.get("COLLIBRA_USER"),
-            password=os.environ.get("COLLIBRA_PASSWORD"),
-            token=os.environ.get("COLLIBRA_TOKEN"),
-        )
+        client = InsightsClient.from_env()
         print(client.download_snapshot(args.date, args.dest))
     else:
         snap = Snapshot(args.path)

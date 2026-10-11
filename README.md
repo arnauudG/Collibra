@@ -27,11 +27,32 @@ print(s.report())                       # every table, row count, columns + type
 s.sql("select count(*) from asset").fetchall()
 ```
 
+## Layers
+
+Each layer works alone and builds on the one above it:
+
+| Module | Responsibility | Knows about Insights? |
+|---|---|---|
+| `client.CollibraClient` | auth, requests, typed errors, `paginate` | no |
+| `insights.InsightsClient(client)` | snapshot download, retention check, safe extraction | yes |
+| `explore.Snapshot(path)` | local DuckDB views over a snapshot folder; **no network** | yes |
+| `model.build_model(snapshot)` | star-schema views, `check_model` | yes |
+
+```python
+from collibra_insights import CollibraClient, InsightsClient
+
+client = CollibraClient.from_env()                  # reusable for any REST 2.0 endpoint
+for community in client.paginate("/communities"):   # pagination: not yet verified on a live instance
+    ...
+folder = InsightsClient(client).download_snapshot("2026-10-10", "snapshots")
+```
+
 ## Status (honest)
 
 | Piece | State |
 |---|---|
-| Date validation, download, safe unzip, DuckDB views, schema discovery | Implemented, unit-tested against **fake** HTTP and **synthetic** Parquet |
+| Generic client (auth, typed errors, pagination) | Implemented, tested against **fake** HTTP. `paginate` assumes the `{total, limit, results}` envelope and is **unverified live** |
+| Insights download, safe unzip, DuckDB views, schema discovery | Implemented, unit-tested against **fake** HTTP and **synthetic** Parquet |
 | Run against a real Collibra environment | **Done once** (training instance, snapshot 2026-10-10): download + explore of all 8 tables worked |
 | Column-level schema | Observed and documented in `docs/data-modeling.md`; still **discovered at runtime**, not hardcoded |
 | Table grain, relation direction, community repeats | **Verified** on the real snapshot. Still open: `attribute.kind` → value column mapping, meaning of `community.level` (`docs/data-modeling.md` §5) |

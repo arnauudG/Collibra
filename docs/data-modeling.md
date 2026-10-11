@@ -62,7 +62,7 @@ There is no standalone user table: users only appear inside `responsibility`, so
 
 ## 5. Checks run so far, and still open
 
-Verified on 2026-10-10: relation mirrored; complex_relation and community repeat ids; **14 assets reference a domain missing from the export** (kept in `dim_asset` with `is_domain_missing = true`; cause unknown). Still open: `kind` → value column mapping, meaning of `community.level`.
+Verified on 2026-10-10: relation mirrored; complex_relation and community repeat ids; **14 assets reference a domain missing from the export** (kept in `dim_asset` with `is_domain_missing = true`; cause unknown). The 14 orphan assets are all type *Issue Category*, and the one domain without a community is of type *Issues Vocabulary Type*: the gaps cluster around Collibra's Issues content (possibly the docs' excluded-types rule; unverified). 5,027 responsibilities point at ids that are not an asset, domain or community (unexplained). Still open: `kind` → value column mapping, meaning of `community.level`.
 
 Reproduce:
 
@@ -85,6 +85,6 @@ These are aggregates only (no names or emails).
 ## 7. Conformance checks (`collibra-insights check <snapshot>`)
 
 1. No orphan assets (`asset.domain_id` ∈ `domain`), domains (`community_id` ∈ `community`).
-2. `attribute`, `relation`, `asset_tag` only reference existing `asset_id`s. `responsibility` may legitimately sit on domains/communities ("a given resource"), so a nonzero count there is informational.
+2. `attribute`, `relation`, `asset_tag` only reference existing `asset_id`s. `responsibility_missing_asset` is nonzero on the real snapshot (5,027 of 20,036) and **not** explained by domains or communities (checked: none of those ids match a domain or community). Treat it as an open data-quality question.
 3. Row counts within tolerance of the previous snapshot.
 4. Excluded types (Roles, Workflow Definitions) are absent.

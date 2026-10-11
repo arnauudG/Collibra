@@ -1,7 +1,11 @@
-"""Client and local explorer for Collibra Insights Data Access snapshots."""
+"""Composable Collibra tooling: a generic REST client, Insights snapshot download, local analysis."""
 
-from .client import CollibraClient, CollibraError
+from .client import CollibraAuthError, CollibraClient, CollibraError, CollibraHTTPError, CollibraNotFound
 from .explore import Snapshot
+from .insights import InsightsClient
 from .tables import DOCUMENTED_TABLES
 
-__all__ = ["CollibraClient", "CollibraError", "Snapshot", "DOCUMENTED_TABLES"]
+__all__ = [
+    "CollibraClient", "CollibraError", "CollibraHTTPError", "CollibraAuthError", "CollibraNotFound",
+    "InsightsClient", "Snapshot", "DOCUMENTED_TABLES",
+]

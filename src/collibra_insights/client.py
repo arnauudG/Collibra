@@ -1,50 +1,43 @@
-"""Minimal Collibra REST client, scoped to downloading Insights snapshots."""
+"""Generic Collibra REST client: authentication, requests, errors, pagination.
+
+Knows nothing about Insights. Domain-specific clients (see ``insights.py``) take a
+``CollibraClient`` and compose on top of it.
+"""
 
 from __future__ import annotations
 
-import calendar
-import datetime as dt
 import os
-import shutil
-import warnings
-import zipfile
-from pathlib import Path
+from collections.abc import Iterator, Mapping
+from typing import Any
 
 import requests
 
-DIRECT_DOWNLOAD = "/rest/2.0/reporting/insights/directDownload"
+API_ROOT = "/rest/2.0"
 
 
 class CollibraError(Exception):
     pass
 
 
-def retention_note(d: dt.date, today: dt.date) -> str | None:
-    """Collibra's documented retention: every day for 31 days, month-ends for 12 months,
-    year-ends indefinitely. Return a message if ``d`` falls outside that, else None."""
-    age = (today - d).days
-    month_end = d.day == calendar.monthrange(d.year, d.month)[1]
-    year_end = d.month == 12 and d.day == 31
-    if age <= 31 or (month_end and age <= 366) or year_end:
-        return None
-    return (f"{d} is outside the documented retention (last 31 days, month-ends for 12 months, "
-            "year-ends after that); the request may fail")
+class CollibraHTTPError(CollibraError):
+    def __init__(self, status_code: int, message: str):
+        super().__init__(f"HTTP {status_code}: {message}")
+        self.status_code = status_code
 
 
-def validate_snapshot_date(value: str | dt.date, today: dt.date | None = None) -> dt.date:
-    """Reject malformed or future dates. Retention gaps only *warn*: Collibra's own pages
-    word the rule differently, so we don't block a request the server might still honour."""
-    today = today or dt.date.today()
-    try:
-        d = value if isinstance(value, dt.date) else dt.datetime.strptime(value, "%Y-%m-%d").date()
-    except ValueError:
-        raise CollibraError(f"snapshot date must be YYYY-MM-DD, got {value!r}") from None
-    if d > today:
-        raise CollibraError(f"snapshot date {d} is in the future")
-    note = retention_note(d, today)
-    if note:
-        warnings.warn(note, stacklevel=2)
-    return d
+class CollibraAuthError(CollibraHTTPError):
+    """401 / 403: bad credentials or missing permission or licence."""
+
+
+class CollibraNotFound(CollibraHTTPError):
+    """404."""
+
+
+def _http_error(resp: requests.Response) -> CollibraHTTPError:
+    cls = {401: CollibraAuthError, 403: CollibraAuthError, 404: CollibraNotFound}.get(
+        resp.status_code, CollibraHTTPError
+    )
+    return cls(resp.status_code, (resp.text or "")[:200])
 
 
 class CollibraClient:
@@ -67,49 +60,55 @@ class CollibraClient:
         else:
             raise CollibraError("provide username+password or token")
 
-    def download_snapshot(self, snapshot_date: str | dt.date, dest: str | Path) -> Path:
-        """Download and extract one Insights snapshot; return the extraction folder.
+    @classmethod
+    def from_env(cls, environ: Mapping[str, str] | None = None, **kwargs: Any) -> CollibraClient:
+        """Build from COLLIBRA_URL plus COLLIBRA_USER/COLLIBRA_PASSWORD or COLLIBRA_TOKEN."""
+        env = os.environ if environ is None else environ
+        if "COLLIBRA_URL" not in env:
+            raise CollibraError("COLLIBRA_URL is not set")
+        return cls(
+            env["COLLIBRA_URL"],
+            username=env.get("COLLIBRA_USER"),
+            password=env.get("COLLIBRA_PASSWORD"),
+            token=env.get("COLLIBRA_TOKEN"),
+            **kwargs,
+        )
 
-        directDownload answers with a redirect to a pre-signed cloud-storage URL
-        (valid ~60s), so redirects must be followed. ``requests`` drops the
-        Authorization header on cross-host redirects, which is what we want.
-        """
-        d = validate_snapshot_date(snapshot_date)
-        dest = Path(dest)
-        out = dest / f"insights-{d.isoformat()}"
-        dest.mkdir(parents=True, exist_ok=True)
-        zip_path = dest / f"insights-{d.isoformat()}.zip"
-        part = zip_path.with_name(zip_path.name + ".part")
-        staging = dest / f".insights-{d.isoformat()}.extracting"
+    def url(self, path: str) -> str:
+        """``path`` is relative to /rest/2.0 (e.g. ``/communities``)."""
+        return f"{self.base_url}{API_ROOT}/{path.lstrip('/')}"
 
+    def request(self, method: str, path: str, **kwargs: Any) -> requests.Response:
+        """Send a request; map failures to ``CollibraError`` subclasses. Redirects are followed."""
+        kwargs.setdefault("timeout", self.timeout)
+        kwargs.setdefault("allow_redirects", True)
         try:
-            resp = self.session.get(
-                self.base_url + DIRECT_DOWNLOAD,
-                params={"snapshotDate": d.isoformat(), "format": "zip"},
-                stream=True,
-                allow_redirects=True,
-                timeout=self.timeout,
-            )
-            if resp.status_code != 200:
-                raise CollibraError(f"download failed: HTTP {resp.status_code} {resp.text[:200]!r}")
-            with open(part, "wb") as fh:  # never leave a half-written .zip behind
-                for chunk in resp.iter_content(1 << 20):
-                    fh.write(chunk)
-            os.replace(part, zip_path)
+            resp = self.session.request(method, self.url(path), **kwargs)
+        except requests.RequestException as exc:
+            # class name only: the message can embed a pre-signed URL
+            raise CollibraError(f"request failed: {type(exc).__name__}") from exc
+        if resp.status_code >= 400:
+            raise _http_error(resp)
+        return resp
 
-            shutil.rmtree(staging, ignore_errors=True)
-            try:
-                with zipfile.ZipFile(zip_path) as zf:
-                    for name in zf.namelist():  # guard against zip-slip
-                        if not (staging / name).resolve().is_relative_to(staging.resolve()):
-                            raise CollibraError(f"unsafe path in archive: {name}")
-                    zf.extractall(staging)
-            except zipfile.BadZipFile:
-                zip_path.unlink(missing_ok=True)
-                raise CollibraError("downloaded file is not a valid ZIP") from None
-            shutil.rmtree(out, ignore_errors=True)  # no stale files from an earlier extraction
-            staging.rename(out)
-        finally:
-            part.unlink(missing_ok=True)
-            shutil.rmtree(staging, ignore_errors=True)
-        return out
+    def get_json(self, path: str, params: Mapping[str, Any] | None = None) -> Any:
+        return self.request("GET", path, params=params).json()
+
+    def paginate(
+        self, path: str, params: Mapping[str, Any] | None = None, page_size: int = 1000
+    ) -> Iterator[Any]:
+        """Yield items of ``results`` across offset/limit pages.
+
+        Assumes Collibra's usual ``{"total", "offset", "limit", "results"}`` envelope.
+        NOT yet checked against a live instance; try ``GET /rest/2.0/communities?limit=2``.
+        """
+        offset = 0
+        while True:
+            page = self.get_json(path, {**(params or {}), "offset": offset, "limit": page_size})
+            results = page.get("results", [])
+            yield from results
+            offset += len(results)
+            limit = page.get("limit") or page_size  # the server may cap our page size
+            total = page.get("total")
+            if not results or (total and offset >= total) or (not total and len(results) < limit):
+                return
