@@ -49,3 +49,12 @@ def test_cli_query(tmp_path, capsys):
 def test_snapshot_empty_dir_errors(tmp_path):
     with pytest.raises(FileNotFoundError):
         Snapshot(tmp_path)
+
+
+def test_cli_reports_errors_in_one_line(monkeypatch):
+    from collibra_insights.cli import main
+
+    monkeypatch.delenv("COLLIBRA_URL", raising=False)
+    with pytest.raises(SystemExit) as info:
+        main(["ping"])
+    assert "COLLIBRA_URL is not set" in str(info.value)

@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from itertools import islice
 
-from .client import CollibraClient
+from .client import CollibraAuthError, CollibraClient, CollibraError
 from .explore import Snapshot
 from .insights import InsightsClient
 from .model import build_model, check_model
@@ -25,6 +26,15 @@ def ping(client: CollibraClient) -> list[str]:
 
 
 def main(argv: list[str] | None = None) -> None:
+    try:
+        _run(argv)
+    except CollibraAuthError as exc:
+        sys.exit(f"error: {exc}\nCheck COLLIBRA_USER / COLLIBRA_PASSWORD (or COLLIBRA_TOKEN), and that the account may use the API.")
+    except CollibraError as exc:
+        sys.exit(f"error: {exc}")
+
+
+def _run(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(prog="collibra-insights")
     sub = p.add_subparsers(dest="cmd", required=True)
     d = sub.add_parser("download", help="download + extract a snapshot")
