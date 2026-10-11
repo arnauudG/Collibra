@@ -31,6 +31,6 @@ docs/                  this page, client.md; docs/insights/ for Insights
 
 ## Conventions
 
-* Credentials come from `COLLIBRA_URL` plus `COLLIBRA_USER`/`COLLIBRA_PASSWORD` or `COLLIBRA_TOKEN`; never from command-line arguments.
+* Credentials come from `COLLIBRA_URL` plus `COLLIBRA_CLIENT_ID`/`COLLIBRA_CLIENT_SECRET` (OAuth, preferred), `COLLIBRA_TOKEN`, or `COLLIBRA_USER`/`COLLIBRA_PASSWORD`; never from command-line arguments.
 * Documentation states what is **verified**, **documented by Collibra** or **inferred**.
 * Exports contain personal data; downloaded data is git-ignored.

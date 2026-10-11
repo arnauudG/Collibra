@@ -40,3 +40,18 @@ def zip_bytes(members):
         for name, data in members.items():
             z.writestr(name, data)
     return buf.getvalue()
+
+
+class RoutedSession:
+    """Routes by (method, url suffix). Each route is a list of responses consumed in order (last repeats)."""
+
+    def __init__(self, routes):
+        self.routes = {k: list(v) for k, v in routes.items()}
+        self.headers, self.auth, self.calls = {}, None, []
+
+    def request(self, method, url, **kw):
+        self.calls.append((method, url, kw))
+        for (m, suffix), queue in self.routes.items():
+            if m == method and url.endswith(suffix):
+                return queue.pop(0) if len(queue) > 1 else queue[0]
+        raise AssertionError(f"unrouted {method} {url}")

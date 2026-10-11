@@ -15,9 +15,12 @@ pip install -e ".[dev]"
 ## Use
 
 ```bash
-export COLLIBRA_URL=https://<your-env>.collibra.com COLLIBRA_USER=<user>
-read -s COLLIBRA_PASSWORD     # on its own line; type, Enter
-export COLLIBRA_PASSWORD
+export COLLIBRA_URL=https://<your-env>.collibra.com
+# OAuth (recommended): an integration application registered by a Collibra administrator
+export COLLIBRA_CLIENT_ID=<client id>
+read -s COLLIBRA_CLIENT_SECRET     # on its own line; type or paste, Enter
+export COLLIBRA_CLIENT_SECRET
+# or basic auth: export COLLIBRA_USER=<user>; read -s COLLIBRA_PASSWORD; export COLLIBRA_PASSWORD
 
 collibra-toolkit ping                                  # generic: credentials + pagination
 collibra-insights tables-available 2026-10-10 --endpoint both
@@ -52,7 +55,7 @@ docs/   docs/insights/       documentation
 
 | Piece | State |
 |---|---|
-| Generic client: auth, typed errors, pagination | Verified live on one instance (basic auth, `/communities`) ; token auth untested |
+| Generic client: auth, typed errors, pagination | Basic auth and pagination verified live on one instance. **OAuth client credentials implemented and unit-tested, not yet verified live**; static token untested |
 | Insights download, extraction, explorer, model, checks | Verified live on one instance; unit-tested with fake HTTP and synthetic data |
 | `view_events` / `fact_view_event` / Usage Analytics recipes | Built from Collibra's documentation; **no real data available to verify** |
 | Cookbook SQL | Every query is executed by the tests against a fixture; not all run on real data |
