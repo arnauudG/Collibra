@@ -17,13 +17,17 @@ _CURRENT = [
 ]
 
 # Heuristic grouping of asset types into Collibra capabilities, by type name. First match wins.
+OPERATING_MODEL_DOMAIN_TYPE = "Operating Model Dictionary"  # Collibra's own configuration, exported as assets
+
+# Heuristic grouping of asset types into Collibra capabilities, by type name. First match wins, so the
+# specific families come before the broad ones (e.g. "Data Quality Rule" is data quality, not a policy).
 CAPABILITIES: list[tuple[str, list[str]]] = [
     ("AI governance", ["AI %", "% AI %", "%Model Card%"]),
     ("Data products", ["%Data Product%"]),
+    ("Data quality", ["%Data Quality%", "%Adaptive%", "%Quality%", "%Metric%"]),
     ("Privacy & risk", ["%Business Process%", "%Third Party%", "%Regulation%", "%Legal%", "%Privacy%",
                         "%Processing%", "%Data Subject%", "%Risk%", "%Assessment%"]),
     ("Policies & rules", ["%Policy%", "%Rule%", "%Standard%", "%Control%"]),
-    ("Data quality", ["%Quality%", "%Metric%"]),
     ("Reference data", ["%Code%", "%Reference%", "%Value List%"]),
     ("BI & reporting", ["%Report%", "BI %", "%Tableau%", "%Power BI%", "%Dashboard%"]),
     ("Issue management", ["%Issue%"]),
@@ -33,14 +37,27 @@ CAPABILITIES: list[tuple[str, list[str]]] = [
     ("Business glossary", ["%Term%", "%Acronym%", "%KPI%", "%Business Dimension%", "%Measure%", "%Glossary%"]),
 ]
 
+# Statuses that mean "no longer live" (heuristic); exclude them before computing KPIs.
+TERMINAL_STATUSES = ("Removed", "Missing from source", "Obsolete", "Retired", "Deprecated", "Rejected", "Archived")
+# Relation roles that express containment or typing rather than business meaning (heuristic).
+STRUCTURAL_ROLES = ("is part of", "contains", "is of type", "groups", "assigned to", "has")
 
-def _capability_case(column: str) -> str:
+
+def _capability_case(type_col: str, domain_type_col: str | None = None) -> str:
     whens = []
+    if domain_type_col:
+        whens.append(f"WHEN {domain_type_col} = '{OPERATING_MODEL_DOMAIN_TYPE}' THEN 'Collibra operating model'")
     for label, patterns in CAPABILITIES:
-        cond = " OR ".join(f"{column} ILIKE '{p}'" for p in patterns)
+        cond = " OR ".join(f"{type_col} ILIKE '{p}'" for p in patterns)
         whens.append(f"WHEN {cond} THEN '{label}'")
     return "CASE " + " ".join(whens) + " ELSE 'Other' END"
 
+
+def _sql_list(values: tuple[str, ...]) -> str:
+    return "(" + ", ".join("'" + v.replace("'", "''") + "'" for v in values) + ")"
+
+
+CAP = _capability_case("asset_type_name", "domain_type_name")
 
 SECTIONS: list[tuple[str, str]] = [
     ("catalogue at a glance (latest snapshot)", """
@@ -59,15 +76,25 @@ SECTIONS: list[tuple[str, str]] = [
                (SELECT count(DISTINCT tag_name) FROM cur_bridge_asset_tag) AS distinct_tags,
                (SELECT count(DISTINCT asset_id) FROM cur_bridge_asset_tag) AS tagged_assets"""),
     ("capabilities in use (heuristic grouping of asset types by name)", f"""
-        SELECT {_capability_case('asset_type_name')} AS capability,
+        SELECT {CAP} AS capability,
                count(DISTINCT asset_type_name) AS asset_types, count(*) AS assets,
                round(100.0 * count(*) / sum(count(*)) OVER (), 1) AS pct_of_assets
         FROM cur_dim_asset GROUP BY 1 ORDER BY 3 DESC"""),
+    ("scope: what to exclude before computing KPIs (heuristic)", f"""
+        SELECT count(*) AS assets,
+               sum(CASE WHEN domain_type_name = '{OPERATING_MODEL_DOMAIN_TYPE}' THEN 1 ELSE 0 END) AS collibra_operating_model_assets,
+               sum(CASE WHEN status_name IN {_sql_list(TERMINAL_STATUSES)} THEN 1 ELSE 0 END) AS assets_in_a_terminal_status,
+               sum(CASE WHEN domain_type_name IS DISTINCT FROM '{OPERATING_MODEL_DOMAIN_TYPE}'
+                         AND status_name NOT IN {_sql_list(TERMINAL_STATUSES)} THEN 1 ELSE 0 END) AS business_assets_in_scope,
+               (SELECT count(*) FROM cur_fact_relation WHERE role_or_corole IN {_sql_list(STRUCTURAL_ROLES)}) AS structural_relations,
+               (SELECT count(*) FROM cur_fact_relation WHERE role_or_corole NOT IN {_sql_list(STRUCTURAL_ROLES)}) AS semantic_relations,
+               (SELECT count(*) FROM cur_fact_attribute WHERE asset_id IS NULL) AS attribute_values_on_complex_relations
+        FROM cur_dim_asset"""),
     ("asset types: where the content is (top 20)", f"""
-        SELECT asset_type_name, {_capability_case('asset_type_name')} AS capability, count(*) AS assets,
+        SELECT asset_type_name, {CAP} AS capability, count(*) AS assets,
                round(100.0 * count(*) / sum(count(*)) OVER (), 1) AS pct,
                count(DISTINCT domain_id) AS domains, count(DISTINCT community_id) AS communities
-        FROM cur_dim_asset GROUP BY 1 ORDER BY 3 DESC LIMIT 20"""),
+        FROM cur_dim_asset GROUP BY 1, 2 ORDER BY 3 DESC LIMIT 20"""),
     ("long tail of asset types", """
         WITH t AS (SELECT asset_type_name, count(*) AS n FROM cur_dim_asset GROUP BY 1)
         SELECT count(*) AS asset_types_used, sum(CASE WHEN n <= 5 THEN 1 ELSE 0 END) AS with_5_or_fewer_assets,
@@ -90,6 +117,11 @@ SECTIONS: list[tuple[str, str]] = [
     ("statuses (top 12)", """
         SELECT status_name, count(*) AS assets, round(100.0 * count(*) / sum(count(*)) OVER (), 1) AS pct
         FROM cur_dim_asset GROUP BY 1 ORDER BY 2 DESC LIMIT 12"""),
+    ("statuses by asset type (the 8 largest types)", """
+        WITH top AS (SELECT asset_type_name FROM cur_dim_asset GROUP BY 1 ORDER BY count(*) DESC LIMIT 8)
+        SELECT a.asset_type_name, a.status_name, count(*) AS assets
+        FROM cur_dim_asset a JOIN top USING (asset_type_name)
+        GROUP BY 1, 2 ORDER BY 1, 3 DESC"""),
     ("how richly described, by asset type (top 12)", """
         WITH per AS (
             SELECT a.asset_type_name, a.asset_id, count(t.attribute_id) AS n
@@ -101,6 +133,15 @@ SECTIONS: list[tuple[str, str]] = [
     ("attribute types in use (top 20)", """
         SELECT attribute_type_name, kind, count(*) AS attribute_values, count(DISTINCT asset_id) AS assets
         FROM cur_fact_attribute GROUP BY 1, 2 ORDER BY 3 DESC LIMIT 20"""),
+    ("attributes filled on business glossary types (top 25)", f"""
+        WITH g AS (SELECT asset_id, asset_type_name FROM cur_dim_asset WHERE {CAP} = 'Business glossary'),
+        n AS (SELECT asset_type_name, count(*) AS total FROM g GROUP BY 1)
+        SELECT g.asset_type_name, t.attribute_type_name, count(DISTINCT t.asset_id) AS assets_with_it, n.total AS assets,
+               round(100.0 * count(DISTINCT t.asset_id) / n.total, 1) AS pct
+        FROM g
+        JOIN cur_fact_attribute t ON t.asset_id = g.asset_id AND coalesce(t.value_as_text, '') <> ''
+        JOIN n ON n.asset_type_name = g.asset_type_name
+        GROUP BY 1, 2, 4 ORDER BY 1, 3 DESC LIMIT 25"""),
     ("relation patterns, one direction (top 20)", """
         SELECT asset_type_name1 AS head_type, role_or_corole AS role, asset_type_name2 AS tail_type, count(*) AS relations
         FROM cur_fact_relation GROUP BY 1, 2, 3 ORDER BY 4 DESC LIMIT 20"""),
@@ -160,7 +201,7 @@ SECTIONS: list[tuple[str, str]] = [
 
 
 # Single-row summaries, printed one "name: value" per line.
-_SUMMARIES = ("catalogue at a glance", "long tail", "structure", "responsibility concentration", "freshness", "contributors")
+_SUMMARIES = ("catalogue at a glance", "scope", "long tail", "structure", "responsibility concentration", "freshness", "contributors")
 
 
 def _render(snap: Snapshot, title: str, sql: str) -> str:

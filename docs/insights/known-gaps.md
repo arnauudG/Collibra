@@ -43,6 +43,10 @@ Four different causes; tell them apart with `collibra-insights investigate <snap
 Check with `collibra-insights tables-available <dates> --endpoint both`. On the reference instance it was **absent on both download endpoints (`directDownload` and the legacy `download`) and on both a recent date and a month-end**, which rules out the endpoint and the date as causes. What remains is that it is **not provisioned for the tenant**, which only the client's Collibra administrator or Collibra support can confirm. Ask: *"Is the Usage Analytics view-events table enabled in our Insights Data Access export?"* (Also check that Usage Analytics itself shows data in the product.) When the table is present the model exposes it as `fact_view_event` and the cookbook has recipes ready (section *Usage Analytics*).
 Status on the reference instance: cause **unconfirmed**; needs the administrator.
 
+### e. Collibra's own configuration appears as content
+Collibra documents its operating model as assets: *Domain*, *Community*, *Attribute Type*, *Relation Type*, *Assignment*, *Permission* and similar types live in *Operating Model Dictionary* domains, with relations such as *User has Role* and *Role has Permission*, and complex relations such as *Assignment Characteristics* (whose attributes have no `asset_id`). On the reference instance this was **2,867 assets (12%)**, about **6,000 relations (22%)** and **4,041 complex relations**.
+**Do:** exclude them from business KPIs (filter on the domain type); keep them if the question is about the operating model itself. `profile` reports the counts.
+
 ## 3. Measure it on your own instance
 
 ```bash

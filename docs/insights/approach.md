@@ -22,10 +22,12 @@ Detail and reasoning: [modeling guide](modeling.md).
 
 | Feasible | Feasible with limits | Not feasible from Insights |
 |---|---|---|
-| Inventory by type, status, domain, community | Ownership: asset-level and domain-level are visible, **community-level is not**, and direct vs inherited cannot be told apart | Quality of the data itself (rule results, profiling) |
-| Attribute coverage (definitions, descriptions, custom fields) | Relations: connectivity, traceability and impact work, but **relation types have no names** | Technical lineage |
+| Inventory by type, status, domain, community | Ownership: asset-level and domain-level are visible, **community-level is not**, and direct vs inherited cannot be told apart | Profiling and full data-quality run history |
+| Attribute coverage (definitions, descriptions, custom fields) | Relations: connectivity, traceability and impact work, but **relation types have no names** (the role label, e.g. *is part of*, is the best proxy) | The technical lineage graph |
 | Connectedness and business-to-technical traceability | People: only those holding a responsibility appear; there is no user directory | Time-in-status, approval timestamps, per-attribute change history |
 | **History** across snapshots: coverage trend, status moves, ownership churn, additions | Usage: needs the optional `view_events` table, which some tenants do not have; UI events only | Live state |
+|  | Data quality: only what Collibra Data Quality writes back into the catalogue (rules, rule scores, dimensions as assets), as of each snapshot | |
+|  | Lineage: only lineage-like relations stored in the catalogue (e.g. column *targets* column) | |
 
 ## 3. Decisions a gold layer can support
 
@@ -48,7 +50,7 @@ Each row names the questions behind it; the SQL is in the [cookbook](cookbook.md
 |---|---|---|
 | Definition coverage | Business Terms with a non-empty definition ÷ all Business Terms | [How many Business Terms have a definition, per domain?](cookbook.md#6-how-many-business-terms-have-a-definition-per-domain) |
 | Ownership coverage | Business Terms with an owner ÷ all | [Which Business Terms have no owner?](cookbook.md#10-which-business-terms-have-no-owner) |
-| Approved share | Terms in an approved status ÷ all | [Where are Business Terms in the approval pipeline?](cookbook.md#7-where-are-business-terms-in-the-approval-pipeline) |
+| Approved share | Terms in an approved status ÷ all (statuses differ per workflow: list them per asset type first) | [Where are Business Terms in the approval pipeline?](cookbook.md#7-where-are-business-terms-in-the-approval-pipeline) |
 | Freshness | Assets edited in the last 12 months ÷ all | [Stale content: not edited for a year](cookbook.md#11-stale-content-not-edited-for-a-year) |
 | Connectedness | Assets with at least one relation ÷ all | [Which assets have no relations at all?](cookbook.md#17-which-assets-have-no-relations-at-all) |
 | Traceability | Business Terms linked to a technical asset ÷ all | [Which Business Terms are linked to technical assets?](cookbook.md#20-which-business-terms-are-linked-to-technical-assets) |
@@ -62,7 +64,14 @@ Each row names the questions behind it; the SQL is in the [cookbook](cookbook.md
 3. **Grain: snapshot × governed area × asset type.** Every table carries the snapshot date, so trends need no extra work.
 4. **The client's names are configuration**, not logic: which attribute is "the definition", which role is "owner", which statuses mean "approved", which asset types are governed. Collect them first.
 5. **Keep unmatched rows and label them.** A few rows always point at objects the export omits; dropping them silently makes totals wrong.
-6. **Gate publication on a few must-be-zero checks**, not on every anomaly. Run `collibra-insights check` and gate like this:
+6. **Scope before you count.** A large share of an export is not business content, and counting it distorts every KPI. Before computing anything, remove or separate:
+   * **Collibra's own configuration**, exported as assets in *Operating Model Dictionary* domains (Domain, Community, Attribute Type, Relation Type, Assignment, Permission…), with their relations and complex relations;
+   * assets in a **terminal status** (*Removed*, *Missing from source*…);
+   * **harvested** technical attributes (data type, nullable, position, created-on…) when measuring *curated* documentation;
+   * **structural** relations (*is part of*, *contains*, *is of type*) when measuring business connectedness or traceability.
+
+   `collibra-insights profile` measures each of these for a client (section *scope*).
+7. **Gate publication on a few must-be-zero checks**, not on every anomaly. Run `collibra-insights check` and gate like this:
 
 | Check (from `check`) | Gate |
 |---|---|
@@ -76,6 +85,7 @@ Each row names the questions behind it; the SQL is in the [cookbook](cookbook.md
 * **Ownership is partly invisible** (community-level), and inherited rows look direct.
 * **History starts the day you start collecting.** Nothing older than Collibra's retention can be recovered.
 * **Usage questions depend on an optional table** that has to be confirmed with the client's Collibra administrator.
+* **Most of the volume is harvested, not curated.** Integrations create columns, code values and their technical attributes in bulk; human documentation is a much smaller share. Coverage KPIs must say which one they measure.
 * **Personal data** (names, emails, usernames) sits in responsibilities and view events; model it minimally.
 
 ## 6. Suggested steps with a client
