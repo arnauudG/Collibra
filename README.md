@@ -55,7 +55,7 @@ docs/   docs/insights/       documentation
 
 | Piece | State |
 |---|---|
-| Generic client: auth, typed errors, pagination | Basic auth and pagination verified live on one instance. **OAuth client credentials implemented and unit-tested, not yet verified live**; static token untested |
+| Generic client: auth, typed errors, pagination | Basic auth, **OAuth client credentials** and pagination verified live on one instance; static token untested; retry/back-off unit-tested only |
 | Insights download, extraction, explorer, model, checks | Verified live on one instance; unit-tested with fake HTTP and synthetic data |
 | `view_events` / `fact_view_event` / Usage Analytics recipes | Built from Collibra's documentation; **no real data available to verify** |
 | Cookbook SQL | Every query is executed by the tests against a fixture; not all run on real data |
