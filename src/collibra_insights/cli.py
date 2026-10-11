@@ -7,6 +7,7 @@ import os
 
 from .client import CollibraClient
 from .explore import Snapshot
+from .model import build_model, check_model
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -20,10 +21,20 @@ def main(argv: list[str] | None = None) -> None:
     q = sub.add_parser("query", help="run a SQL query against an extracted snapshot")
     q.add_argument("path")
     q.add_argument("sql")
+    q.add_argument("--model", action="store_true", help="also create the dim_/fact_ views first")
+    k = sub.add_parser("check", help="build the model and report conformance violations")
+    k.add_argument("path")
     args = p.parse_args(argv)
 
+    if args.cmd == "check":
+        for name, n in check_model(Snapshot(args.path)).items():
+            print(f"{'OK  ' if n == 0 else 'WARN'} {name}: {n}")
+        return
     if args.cmd == "query":
-        cur = Snapshot(args.path).sql(args.sql)
+        snap = Snapshot(args.path)
+        if args.model:
+            build_model(snap)
+        cur = snap.sql(args.sql)
         cols = [c[0] for c in cur.description]
         print(" | ".join(cols))
         for row in cur.fetchall():
