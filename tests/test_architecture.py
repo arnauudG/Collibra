@@ -30,7 +30,6 @@ ALLOWED = {
     f"{P}.insights.api": [f"{P}.client", f"{P}.insights.tables", f"{P}.insights.api"],
     f"{P}.insights.store": [f"{P}.insights.tables", f"{P}.insights.store"],
     f"{P}.insights.model": [f"{P}.insights.store", f"{P}.insights.model"],
-    f"{P}.insights.lakehouse": [f"{P}.insights.store", f"{P}.insights.model", f"{P}.insights.tables", f"{P}.insights.lakehouse"],
     f"{P}.insights.diagnostics": [f"{P}._lazy", f"{P}.insights.diagnostics"],
     f"{P}.insights.diagnostics.offline": [f"{P}.insights.store"],
     f"{P}.insights.diagnostics.live": [f"{P}.client", f"{P}.insights.store", f"{P}.insights.diagnostics.offline"],

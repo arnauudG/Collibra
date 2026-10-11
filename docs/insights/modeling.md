@@ -90,7 +90,7 @@ Anything unexpected is worth a look with `collibra-insights investigate`.
 
 ## 6. Using the model outside DuckDB
 
-The toolkit can write silver and gold as Hive-partitioned Parquet (`collibra-insights export --help`), which any lakehouse engine registers as an external table partitioned by `snapshot_date`; most clients read that and need no translation. If the client prefers to run the transformations in their own engine, the SQL here is **DuckDB dialect**. Translate:
+If a client wants to run these transformations in their own engine, note that the SQL here is **DuckDB dialect**. Translate:
 
 | DuckDB construct | Translate to |
 |---|---|

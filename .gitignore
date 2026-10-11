@@ -8,5 +8,3 @@ snapshots/
 *.duckdb
 # diagnostic outputs contain instance data
 investigate*.txt
-# medallion output (bronze/silver/gold) holds instance data
-lake/

@@ -1,6 +1,6 @@
 # collibra-toolkit
 
-Reusable Python tooling for Collibra: a **generic REST client** that any initiative can build on and, so far, one initiative, **Insights Data Access** (download nightly snapshots, explore them locally with DuckDB, model them as a star schema, answer questions with SQL).
+A **discovery toolkit** for understanding what Collibra offers and what business capabilities it enables. It has a **generic REST client** that any initiative can build on and, so far, one initiative, **Insights Data Access**: download a snapshot, take its structure apart, model it as a star schema, and see which business questions and decisions it supports. It is for learning and advising, not for running a data platform.
 
 ## Documentation
 
@@ -38,7 +38,6 @@ collibra-insights explore  snapshots/insights-2026-10-10
 collibra-insights check    snapshots/insights-2026-10-10
 collibra-insights investigate snapshots/insights-2026-10-10 --live
 collibra-insights query    snapshots/insights-2026-10-10 --model --file q.sql
-collibra-insights export   snapshots/insights-2026-10-10 --out lake      # optional: bronze/silver/gold Parquet
 ```
 (`collibra-toolkit insights …` is the same as `collibra-insights …`. Point `explore`/`query` at a parent folder to load several snapshots at once for history.)
 
@@ -64,9 +63,8 @@ src/collibra_toolkit/
     tables.py    pure data: the documented tables
     api/         download (needs the client; no DuckDB)
     store/       local DuckDB snapshot (needs nothing; no network)
-    model/       star schema, checks, gold tables (needs store)
+    model/       star schema and conformance checks (needs store)
     diagnostics/ offline (needs store) and live (needs store + client)
-    lakehouse/   optional bronze/silver/gold Parquet output (needs store + model)
     cli.py       composition root: each command imports only the layers it needs
 tests/           mirrors src/; tests/support/ holds the shared HTTP fakes
 docs/            mirrors src/: docs/client, docs/insights
@@ -88,14 +86,13 @@ docs/            mirrors src/: docs/client, docs/insights
 
 ## Conventions and status
 
-* Credentials come from environment variables, never from arguments. Downloaded data, diagnostic outputs and `lake/` are git-ignored: they contain instance data.
+* Credentials come from environment variables, never from arguments. Downloaded data and diagnostic outputs are git-ignored: they contain instance data.
 * Documentation states what is **verified**, **documented by Collibra** or **inferred**.
 
 | Piece | State |
 |---|---|
 | Generic client: basic auth, **OAuth client credentials**, pagination | Verified live on one instance; static token untested; retry/back-off unit-tested only |
 | Insights download, explorer, model, checks, diagnostics | Verified live on one instance; also unit-tested with fake HTTP and synthetic data |
-| `export` (bronze/silver/gold Parquet) | Unit-tested on synthetic data; **not yet run on a real snapshot** |
 | `view_events` and the Usage Analytics recipes | Built from Collibra's documentation; **no real data to verify** |
 | Cookbook SQL | Every query is executed by the tests against a fixture; not all run on real data |
 

@@ -2,7 +2,7 @@
 
 Layers (the sub-packages): ``tables`` (documented tables), ``api`` (download; needs the generic
 client), ``store`` (local DuckDB snapshot; no network), ``model`` (star schema), ``diagnostics``
-(offline and live evidence), ``lakehouse`` (bronze/silver/gold Parquet output). Public names load lazily, so ``InsightsClient`` can be used
+(offline and live evidence). Public names load lazily, so ``InsightsClient`` can be used
 without DuckDB and ``Snapshot`` without ``requests``.
 """
 
@@ -14,9 +14,6 @@ _EXPORTS = {
     "Snapshot": ".store",
     "build_model": ".model",
     "check_model": ".model",
-    "build_gold": ".model",
-    "GoldConfig": ".model",
-    "export_layers": ".lakehouse",
     "CORE_TABLES": ".tables",
     "OPTIONAL_TABLES": ".tables",
     "DOCUMENTED_TABLES": ".tables",
