@@ -39,6 +39,18 @@ def test_snapshot_discovers_tables(tmp_path):
     assert "asset" in s.report()
 
 
+def test_snapshot_hive_partitioned_layout(tmp_path):
+    """Real snapshots: <table>/snapshot_date_year=Y/snapshot_date_month=M/snapshot_date_day=D/file.parquet"""
+    for name, n in (("asset", 3), ("responsibility", 2)):
+        d = tmp_path / "wrapper" / name / "snapshot_date_year=2026" / "snapshot_date_month=10" / "snapshot_date_day=10"
+        d.mkdir(parents=True)
+        pq.write_table(pa.table({"id": list(range(n))}), d / "part-0.parquet")
+    s = Snapshot(tmp_path)
+    assert s.tables == ["asset", "responsibility"]
+    assert s.row_counts() == {"asset": 3, "responsibility": 2}
+    assert "snapshot_date_day" in [c[0] for c in s.describe("asset")]
+
+
 def test_snapshot_empty_dir_errors(tmp_path):
     with pytest.raises(FileNotFoundError):
         Snapshot(tmp_path)

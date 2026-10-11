@@ -16,13 +16,29 @@ class Snapshot:
         self.path = Path(path)
         self.con = duckdb.connect(database)
         self.tables: list[str] = []
-        for folder in sorted({p.parent for p in self.path.rglob("*.parquet")}):
-            name = folder.name
-            glob = (folder / "*.parquet").as_posix().replace("'", "''")
-            self.con.execute(f'CREATE OR REPLACE VIEW "{name}" AS SELECT * FROM read_parquet(\'{glob}\')')
-            self.tables.append(name)
+        for folder in sorted(self._table_folders()):
+            glob = (folder / "**" / "*.parquet").as_posix().replace("'", "''")
+            self.con.execute(
+                f'CREATE OR REPLACE VIEW "{folder.name}" AS '
+                f"SELECT * FROM read_parquet('{glob}', hive_partitioning=true, union_by_name=true)"
+            )
+            self.tables.append(folder.name)
         if not self.tables:
             raise FileNotFoundError(f"no .parquet files under {self.path}")
+
+    def _table_folders(self) -> set[Path]:
+        """Real snapshots are Hive-partitioned: <table>/snapshot_date_year=.../.../file.parquet.
+
+        A table is the folder just above the first ``key=value`` partition folder,
+        or the file's own folder when the layout is flat.
+        """
+        folders = set()
+        for f in self.path.rglob("*.parquet"):
+            rel = f.relative_to(self.path).parent
+            parts = rel.parts
+            depth = next((i for i, p in enumerate(parts) if "=" in p), len(parts))
+            folders.add(self.path.joinpath(*parts[:depth]) if depth else self.path)
+        return folders
 
     def undocumented(self) -> list[str]:
         """Tables present in the snapshot that Collibra's docs do not name (e.g. usage analytics)."""
