@@ -55,7 +55,7 @@ Precedence when several are set: OAuth, then token, then basic. A client id with
 ## Verification status
 
 * **Verified on a live instance:** basic authentication, `GET /communities` envelope and multi-page pagination, 401 handling, the Insights download endpoint, `excludeMeta=false`, `GET /assets/{id}`, `/domains/{id}`, `/communities/{id}`, `/assetTypes`, and the `typeIds` asset filter.
-* **Verified on a live instance (Oct 2026):** OAuth 2.0 client credentials with an *integration* application (`ping` reported `oauth`; token endpoint, parameters and Bearer use as documented).
+* **Verified on a live instance (Oct 2026):** OAuth 2.0 client credentials with an *integration* application (`ping` reported `oauth`; token endpoint, parameters and Bearer use as documented). The same application also **downloaded an Insights snapshot**, so it needs the permission to download reporting data, and nothing more was required on the reference instance.
 * **Implemented and unit-tested only:** static bearer tokens.
 * **Implemented and unit-tested, not yet seen on a live instance:** retry/back-off for 429 and 5xx (no rate limiting has been observed yet).
 * **Not yet verified:** other endpoints.

@@ -7,7 +7,7 @@ A repeatable checklist. Allow about an hour for the first run. Nothing here assu
 | Need | Detail |
 |---|---|
 | Licence and version | Collibra Insights licence, Platform 5.7+ |
-| Access | **Preferred:** an *integration* OAuth application registered by the client's administrator (Settings → OAuth Applications), with permission to download reporting data. Otherwise a dedicated technical user. Avoid personal accounts |
+| Access | **Preferred:** an *integration* OAuth application registered by the client's administrator (Settings → OAuth Applications), with permission to download reporting data (confirmed sufficient for `ping` and `download` on the reference instance). Otherwise a dedicated technical user. Avoid personal accounts |
 | Where to run | Your machine or a client-approved host. Snapshots contain governance data and personal data: keep them off shared drives and out of git (`snapshots/` is git-ignored) |
 | Install | `pip install -e ".[dev]"` from this repository |
 
