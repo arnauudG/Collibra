@@ -51,6 +51,14 @@ def test_snapshot_hive_partitioned_layout(tmp_path):
     assert "snapshot_date_day" in [c[0] for c in s.describe("asset")]
 
 
+def test_cli_query(tmp_path, capsys):
+    from collibra_insights.cli import main
+
+    _make_snapshot(tmp_path)
+    main(["query", str(tmp_path), "select count(*) as n from asset"])
+    assert capsys.readouterr().out.splitlines() == ["n", "3"]
+
+
 def test_snapshot_empty_dir_errors(tmp_path):
     with pytest.raises(FileNotFoundError):
         Snapshot(tmp_path)

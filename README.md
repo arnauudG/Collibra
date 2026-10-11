@@ -16,6 +16,7 @@ export COLLIBRA_USER=...  COLLIBRA_PASSWORD=...     # or COLLIBRA_TOKEN=...
 
 collibra-insights download 2026-10-10                # -> snapshots/insights-2026-10-10/
 collibra-insights explore snapshots/insights-2026-10-10
+collibra-insights query snapshots/insights-2026-10-10 "select count(*) from asset"
 ```
 
 ```python
@@ -30,7 +31,9 @@ s.sql("select count(*) from asset").fetchall()
 | Piece | State |
 |---|---|
 | Date validation, download, safe unzip, DuckDB views, schema discovery | Implemented, unit-tested against **fake** HTTP and **synthetic** Parquet |
-| Run against a real Collibra environment | **Not yet done**; needs credentials + an Insights licence |
-| Column-level schema | **Not hardcoded on purpose**: Collibra's public docs name the tables but not the columns. Run `explore` on a real snapshot, then fill in `docs/data-modeling.md`. |
+| Run against a real Collibra environment | **Done once** (training instance, snapshot 2026-10-10): download + explore of all 8 tables worked |
+| Column-level schema | Observed and documented in `docs/data-modeling.md`; still **discovered at runtime**, not hardcoded |
+| Table grain / hierarchy / relation direction | Inferred from column names; verify with the `query` command (see `docs/data-modeling.md` §5) |
+| Star-schema SQL | Not written yet; waiting on the §5 answers |
 
 Requires Collibra Platform 5.7+ and a Collibra Insights licence. Snapshots may contain sensitive governance data and are git-ignored.

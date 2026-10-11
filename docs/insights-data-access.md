@@ -42,6 +42,8 @@ The docs list these (the ZIP holds one folder of Parquet per table; the GCP guid
 
 **Privacy:** Usage Analytics data can be subject to access restrictions in your organisation; get approval before using it.
 
-## Not documented publicly
+## What a real snapshot looks like (observed 2026-10-10)
 
-Column names and types. They are in the Marketplace SQL scripts and in the Parquet files. Run `collibra-insights explore <snapshot>` once on real data and record them in [`data-modeling.md`](data-modeling.md).
+- Each table is a folder of **Hive-partitioned** Parquet: `<table>/snapshot_date_year=…/snapshot_date_month=…/snapshot_date_day=…/*.parquet`.
+- All eight tables above were present. No Usage Analytics table was in the snapshot (reason unknown).
+- Column names and types are not in the public docs; they are listed in [`data-modeling.md`](data-modeling.md) and printed by `collibra-insights explore <snapshot>`.

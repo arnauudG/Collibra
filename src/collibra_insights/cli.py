@@ -17,7 +17,18 @@ def main(argv: list[str] | None = None) -> None:
     d.add_argument("--dest", default="snapshots")
     e = sub.add_parser("explore", help="print tables/columns of an extracted snapshot")
     e.add_argument("path")
+    q = sub.add_parser("query", help="run a SQL query against an extracted snapshot")
+    q.add_argument("path")
+    q.add_argument("sql")
     args = p.parse_args(argv)
+
+    if args.cmd == "query":
+        cur = Snapshot(args.path).sql(args.sql)
+        cols = [c[0] for c in cur.description]
+        print(" | ".join(cols))
+        for row in cur.fetchall():
+            print(" | ".join("" if v is None else str(v) for v in row))
+        return
 
     if args.cmd == "download":
         client = CollibraClient(
