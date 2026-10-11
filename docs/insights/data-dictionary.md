@@ -64,7 +64,7 @@ Key: `(snapshot_date, domain_id)`.
 | `community_id` | Parent community |
 | `domain_uri` | Deprecated |
 
-Official wording: domains "that contain assets". *Verified on the reference instance:* see the `investigate` section "domains with / without assets" for your own numbers; do not assume every domain has assets.
+Collibra's wording is domains "that contain assets", but the reference export also contained **empty** domains (232 of 585, mostly built-in *Issues Vocabulary* domains). Do not assume every domain has assets; `investigate` prints your count.
 
 ## `asset`
 

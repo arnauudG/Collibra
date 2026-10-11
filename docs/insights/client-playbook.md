@@ -32,7 +32,7 @@ Four lines, no content. A 401 is credentials; a 403 is a missing permission or l
 ```bash
 collibra-insights tables-available <yesterday> <a month-end> --endpoint both
 ```
-Compare against the eight core tables. Note whether `view_events` is present and whether the two endpoints differ.
+Compare against the eight core tables. Note whether `view_events` is present and whether the two endpoints differ. If `view_events` is absent on both endpoints and both dates, it is not provisioned for this client: ask their administrator or Collibra support (wording in [known-gaps.md](known-gaps.md) 2d).
 
 ## 3. Download and explore (5 min)
 

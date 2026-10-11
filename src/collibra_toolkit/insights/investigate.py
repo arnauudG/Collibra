@@ -127,49 +127,69 @@ def _total(client: CollibraClient, path: str, **params) -> int | None:
     return client.get_json(path, {"limit": 1, "countLimit": -1, **params}).get("total")
 
 
-def resolve_id(client: CollibraClient, id_: str, domain_types: dict[str, str] | None = None) -> str:
-    """Ask the live API what an id is. Returns the kind, type and (for assets) the kind of domain it
-    lives in, never names. ``domain_types`` maps exported domain ids to their type names."""
+def lookup_id(client: CollibraClient, id_: str) -> dict:
+    """Ask the live API what an id is: {'kind', 'type', 'domain_id'} (no names), or kind None."""
     for kind, path in (("asset", "/assets/"), ("domain", "/domains/"), ("community", "/communities/")):
         try:
             obj = client.get_json(path + id_)
         except CollibraNotFound:
             continue
         except CollibraHTTPError as exc:
-            return f"{kind}? HTTP {exc.status_code}"
-        label = kind
-        type_name = (obj.get("type") or {}).get("name")
-        if type_name:
-            label += f" (type {type_name})"
-        if kind == "asset" and domain_types is not None:
-            dom = (obj.get("domain") or {}).get("id")
-            if dom:
-                label += f" in {domain_types[dom]} domain" if dom in domain_types else " in a domain not in the export"
-        return label
-    return "not found as asset, domain or community"
+            return {"kind": kind, "error": exc.status_code}
+        domain_id = (obj.get("domain") or {}).get("id") if kind == "asset" else None
+        return {"kind": kind, "type": (obj.get("type") or {}).get("name"), "domain_id": domain_id}
+    return {"kind": None}
+
+
+def describe(info: dict, domain_types: dict[str, str] | None = None) -> str:
+    """Format a ``lookup_id`` result. ``domain_types`` maps exported domain ids to type names."""
+    if info["kind"] is None:
+        return "not found as asset, domain or community"
+    if "error" in info:
+        return f"{info['kind']}? HTTP {info['error']}"
+    label = info["kind"] + (f" (type {info['type']})" if info.get("type") else "")
+    if info["kind"] == "asset" and domain_types is not None and info.get("domain_id"):
+        dom = info["domain_id"]
+        label += f" in {domain_types[dom]} domain" if dom in domain_types else " in a domain not in the export"
+    return label
+
+
+def resolve_id(client: CollibraClient, id_: str, domain_types: dict[str, str] | None = None) -> str:
+    return describe(lookup_id(client, id_), domain_types)
+
+
+def role_resources(client: CollibraClient, role_id: str) -> dict:
+    """Ask the responsibilities API where a role is assigned: resource types and ids.
+
+    Field names are tolerant on purpose; ``keys`` shows what the API really returned.
+    """
+    try:
+        page = client.get_json("/responsibilities", {"roleIds": [role_id], "limit": 100})
+    except CollibraHTTPError as exc:
+        return {"error": exc.status_code}
+    items = page.get("results", [])
+    resources = []
+    for item in items:
+        res = item.get("baseResource") or item.get("resource") or {}
+        rtype = res.get("resourceType") or res.get("resourceDiscriminator") or res.get("type") or "?"
+        resources.append((rtype, res.get("id")))
+    return {
+        "keys": sorted(items[0]) if items else [],
+        "resources": resources,
+        "role_names": Counter((i.get("role") or {}).get("name") for i in items),
+        "total": page.get("total"),
+        "complete": len(items) < 100,
+    }
 
 
 def probe_role(client: CollibraClient, role_id: str) -> str:
-    """Ask the responsibilities API which kind of resource a role is attached to.
-
-    Field names are tolerant on purpose (the schema was not verified): we report the item keys we
-    saw, so a surprising answer is still informative.
-    """
-    try:
-        page = client.get_json("/responsibilities", {"roleIds": [role_id], "limit": 20})
-    except CollibraHTTPError as exc:
-        return f"HTTP {exc.status_code}"
-    items = page.get("results", [])
-    if not items:
+    d = role_resources(client, role_id)
+    if "error" in d:
+        return f"HTTP {d['error']}"
+    if not d["resources"]:
         return "no results"
-
-    def resource_type(item: dict) -> str:
-        res = item.get("baseResource") or item.get("resource") or {}
-        return res.get("resourceType") or res.get("resourceDiscriminator") or res.get("type") or "?"
-
-    roles = Counter((i.get("role") or {}).get("name") for i in items)
-    return (f"item keys {sorted(items[0])}; resource types {dict(Counter(map(resource_type, items)))}; "
-            f"role names in result {dict(roles)}")
+    types = dict(Counter(r[0] for r in d["resources"]))
+    return f"item keys {d['keys']}; resource types {types}; role names in result {dict(d['role_names'])}"
 
 
 def _ids(snap: Snapshot, sql: str, n: int = 8, spread: bool = False) -> list[str]:
@@ -221,9 +241,19 @@ def live_report(client: CollibraClient, snap: Snapshot) -> str:
     for role, role_id in roles:
         safe = role.replace("'", "''")
         ids = _ids(snap, f"SELECT asset_id AS id FROM ({_UNRESOLVED}) WHERE role_name = '{safe}'", 15, spread=True)
-        tally = Counter(resolve_id(client, i, domain_types) for i in ids)
-        out.append(f"{role}: {dict(tally)}")
+        infos = [lookup_id(client, i) for i in ids]
+        out.append(f"{role}: {dict(Counter(describe(i, domain_types) for i in infos))}")
         out.append(f"  responsibilities API for this role: {probe_role(client, role_id)}")
+        detail = role_resources(client, role_id)
+        if "error" not in detail:
+            assigned = {rid for rtype, rid in detail["resources"] if rtype == "Domain" and rid}
+            sampled = {i["domain_id"] for i in infos if i.get("domain_id")}
+            if sampled:
+                inside = len(sampled & assigned)
+                out.append(
+                    f"  domain-level expansion test: {inside} of {len(sampled)} distinct domains holding the sampled assets "
+                    f"are domains this role is assigned on directly ({'API list complete' if detail['complete'] else 'API list truncated'}); "
+                    f"role has {len(assigned)} domain-level assignments in the API")
     for title, ids in samples.items():
         out.append(f"\n## live lookup: {title} (sample of {len(ids)})")
         out += [f"{i[:8]}… -> {resolve_id(client, i)}" for i in ids] or ["(none)"]

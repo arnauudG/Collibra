@@ -152,6 +152,32 @@ GROUP BY 1, 2
 ORDER BY 3 DESC
 ```
 
+### 22. Which responsibilities look like domain-level assignments?
+```sql
+WITH n AS (
+    SELECT snapshot_date, domain_id, count(*) AS assets
+    FROM dim_asset GROUP BY 1, 2
+),
+c AS (
+    SELECT a.snapshot_date, a.domain_id, r.role_name, r.user_id,
+           count(DISTINCT r.asset_id) AS covered
+    FROM fact_responsibility r
+    JOIN dim_asset a ON a.snapshot_date = r.snapshot_date AND a.asset_id = r.asset_id
+    WHERE r.user_id IS NOT NULL AND r.asset_resolution = 'in_export'
+    GROUP BY 1, 2, 3, 4
+)
+SELECT d.domain_name, c.role_name, c.user_id, c.covered, n.assets,
+       round(100.0 * c.covered / n.assets, 1) AS pct_of_domain
+FROM c
+JOIN n ON n.snapshot_date = c.snapshot_date AND n.domain_id = c.domain_id
+JOIN dim_domain d ON d.snapshot_date = c.snapshot_date AND d.domain_id = c.domain_id
+WHERE n.assets >= 5 AND c.covered = n.assets
+ORDER BY n.assets DESC
+LIMIT 25
+```
+*Reads as:* a person-role pair that covers **every** asset of a domain with at least 5 assets is almost certainly assigned on the domain and expanded onto its assets by the export, not set asset by asset. Useful to separate real stewardship from inheritance before counting workload (recipe 8).
+*Watch out:* a heuristic, not a fact: the export has no direct/inherited flag.
+
 ---
 
 ## Relationships and lineage-style questions
