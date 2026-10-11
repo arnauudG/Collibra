@@ -55,3 +55,9 @@ def snap(tmp_path):
         community_id="c1", community_name="Root", diagram_id=None, diagram_name=None, dashboard_id=None,
         dashboard_name=None, view_id=None, view_name=None, page_parameters=None, page_path="/asset/a1", tab_name="Overview")])
     return Snapshot(tmp_path)
+
+
+@pytest.fixture
+def lake(tmp_path_factory):
+    """An output folder that is NOT the snapshot folder (they must stay separate)."""
+    return tmp_path_factory.mktemp("lake")

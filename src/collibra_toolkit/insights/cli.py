@@ -45,6 +45,12 @@ def _parser() -> argparse.ArgumentParser:
     i.add_argument("path")
     i.add_argument("--live", action="store_true", help="also compare with the REST API (needs credentials)")
 
+    x = sub.add_parser("export", help="write medallion layers (bronze raw, silver model, gold reporting) as Parquet")
+    x.add_argument("path", help="an extracted snapshot, or a folder holding several")
+    x.add_argument("--out", default="lake", help="output root: <out>/<layer>/insights/<table>")
+    x.add_argument("--layer", choices=["bronze", "silver", "gold", "all"], default="all")
+    x.add_argument("--gold-config", help="JSON file with the client's names (see GoldConfig)")
+
     sub.add_parser("ping", help="check credentials and pagination against COLLIBRA_URL")
     return p
 
@@ -110,6 +116,14 @@ def _main(argv: list[str] | None = None) -> None:
 
         for name, n in check_model(_store()(args.path)).items():
             print(f"{'OK  ' if n == 0 else 'WARN'} {name}: {n}")
+    elif args.cmd == "export":
+        from .lakehouse import LAYERS, export_layers, load_gold_config
+
+        _store()  # fail with the friendly message if DuckDB is missing
+        layers = LAYERS if args.layer == "all" else (args.layer,)
+        report = export_layers(args.path, args.out, layers, load_gold_config(args.gold_config))
+        for layer, detail in report.items():
+            print(f"{layer}: {detail}")
     elif args.cmd == "investigate":
         from .diagnostics import live_report, snapshot_report
 

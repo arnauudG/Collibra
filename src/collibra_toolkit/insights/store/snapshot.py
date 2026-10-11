@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import shutil
+from collections.abc import Iterable
 from pathlib import Path
 
 import duckdb
@@ -78,3 +80,23 @@ class Snapshot:
             for col, typ, *_ in self.describe(t):
                 lines.append(f"    {col}: {typ}")
         return "\n".join(lines)
+
+    def export(self, names: Iterable[str], out_dir: str | Path, partition_by: str = "snapshot_date") -> dict[str, int]:
+        """Write views/tables as Hive-partitioned Parquet: ``<out_dir>/<name>/<partition_by>=<value>/*.parquet``.
+
+        Every lakehouse reads this layout. Re-exporting replaces exactly the partitions present in the
+        data (never duplicates them) and leaves other partitions alone. Returns rows written per name.
+        """
+        out, written = Path(out_dir), {}
+        for name in names:
+            values = [r[0] for r in self.con.execute(f'SELECT DISTINCT {partition_by} FROM "{name}"').fetchall()]
+            target = out / name
+            for value in values:
+                shutil.rmtree(target / f"{partition_by}={'NULL' if value is None else value}", ignore_errors=True)
+            target.mkdir(parents=True, exist_ok=True)
+            path = target.as_posix().replace("'", "''")
+            self.con.execute(
+                f"COPY (SELECT * FROM \"{name}\") TO '{path}' (FORMAT PARQUET, PARTITION_BY ({partition_by}), OVERWRITE_OR_IGNORE)"
+            )
+            written[name] = self.con.execute(f'SELECT count(*) FROM "{name}"').fetchone()[0]
+        return written

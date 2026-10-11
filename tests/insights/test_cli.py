@@ -31,3 +31,12 @@ def test_cli_reports_errors_in_one_line(monkeypatch):
     with pytest.raises(SystemExit) as info:
         main(["ping"])
     assert "COLLIBRA_URL is not set" in str(info.value)
+
+
+def test_export_command_writes_the_requested_layer(snap, lake, capsys):
+    from collibra_toolkit.insights.cli import main
+
+    out = lake
+    main(["export", str(snap.path), "--out", str(out), "--layer", "silver"])
+    assert "silver:" in capsys.readouterr().out
+    assert (out / "silver" / "insights" / "fact_relation").is_dir() and not (out / "gold").exists()
