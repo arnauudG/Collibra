@@ -54,7 +54,7 @@ There is no standalone user table: users only appear inside `responsibility`, so
 
 **b) Attributes are typed EAV.** One row per attribute with the value in one of: `expression_long` (text), `boolean_value`, `datetime_value`, `numeric_value`, discriminated by `kind` *(to verify: which `kind` maps to which column)*. Keep `fact_attribute` long, and pivot only chosen attribute types into wide marts per asset type (`mart_business_term`: definition, description, …). A global pivot is unstable because custom attribute types differ per environment.
 
-**c) Relations carry direction.** `relation` has `direction` and `role_or_corole`, and two asset sides. Whether each relationship appears once or once per direction *(to verify, §5)* decides whether naive counts double.
+**c) Every relation is stored twice (verified).** In the 2026-10-10 snapshot each `relation_id` has exactly two rows, `direction = 'head -> tail'` and `'tail -> head'` (27,360 ids, 54,720 rows). So `count(*)` over `relation` doubles everything. Build `fact_relation` with **one row per `relation_id`** by keeping `direction = 'head -> tail'`, and expose the reverse reading as a view if needed. *(Still to verify: the two rows are mirror images, i.e. `asset_id1`/`asset_id2` swapped; see §5.)*
 
 **d) Complex relations look like one row per participant** (`relation_role` + `asset_id` under a `complex_relation_id`) *(to verify)*. Model as a bridge keyed by `complex_relation_id`.
 
@@ -65,7 +65,8 @@ There is no standalone user table: users only appear inside `responsibility`, so
 ```bash
 S=snapshots/insights-2026-10-10
 collibra-insights query $S "select direction, count(*) from relation group by 1"
-collibra-insights query $S "select count(*) rows_, count(distinct relation_id) ids from relation"
+collibra-insights query $S "select count(*) rows_, count(distinct relation_id) ids from relation"   # verified: 54720 / 27360
+collibra-insights query $S "select count(*) mirrored from relation a join relation b on a.relation_id=b.relation_id and a.direction='head -> tail' and b.direction='tail -> head' and a.asset_id1=b.asset_id2 and a.asset_id2=b.asset_id1"   # expect 27360
 collibra-insights query $S "select count(*) rows_, count(distinct complex_relation_id) ids from complex_relation"
 collibra-insights query $S "select count(*) rows_, count(distinct community_id) ids from community"
 collibra-insights query $S "select kind, count(*) from attribute group by 1 order by 2 desc"
