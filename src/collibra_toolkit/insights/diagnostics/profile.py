@@ -145,6 +145,20 @@ SECTIONS: list[tuple[str, str]] = [
     ("relation patterns, one direction (top 20)", """
         SELECT asset_type_name1 AS head_type, role_or_corole AS role, asset_type_name2 AS tail_type, count(*) AS relations
         FROM cur_fact_relation GROUP BY 1, 2, 3 ORDER BY 4 DESC LIMIT 20"""),
+    ("traceability: what business glossary assets are linked to (any relation, either direction)", f"""
+        WITH cap AS (SELECT asset_id, asset_type_name, {CAP} AS capability FROM cur_dim_asset),
+        links AS (SELECT asset_id1 AS a, asset_id2 AS b FROM cur_fact_relation
+                  UNION ALL SELECT asset_id2, asset_id1 FROM cur_fact_relation),
+        linked AS (SELECT DISTINCT l.a AS asset_id, c2.capability AS linked_capability
+                   FROM links l JOIN cap c2 ON c2.asset_id = l.b)
+        SELECT c.asset_type_name, count(DISTINCT c.asset_id) AS assets,
+               count(DISTINCT CASE WHEN k.linked_capability = 'Technical catalog' THEN c.asset_id END) AS linked_to_technical_catalog,
+               count(DISTINCT CASE WHEN k.linked_capability = 'BI & reporting' THEN c.asset_id END) AS linked_to_bi,
+               count(DISTINCT CASE WHEN k.linked_capability = 'Data quality' THEN c.asset_id END) AS linked_to_data_quality,
+               count(DISTINCT CASE WHEN k.linked_capability = 'Business glossary' THEN c.asset_id END) AS linked_to_other_glossary_assets
+        FROM cap c LEFT JOIN linked k ON k.asset_id = c.asset_id
+        WHERE c.capability = 'Business glossary'
+        GROUP BY 1 ORDER BY 2 DESC"""),
     ("connectedness by asset type (top 12)", """
         WITH ends AS (SELECT asset_id1 AS asset_id FROM cur_fact_relation UNION ALL SELECT asset_id2 FROM cur_fact_relation),
         deg AS (SELECT asset_id, count(*) AS d FROM ends GROUP BY 1)

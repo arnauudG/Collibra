@@ -477,7 +477,7 @@ WHERE t.tag_name = 'PII'
 GROUP BY 1, 2
 ORDER BY 3 DESC
 ```
-*Reads as:* a risk list: sensitive content nobody is accountable for. Replace `'PII'` with the client's tag (`SELECT tag_name, count(*) FROM bridge_asset_tag GROUP BY 1` lists them).
+*Reads as:* a risk list: sensitive content nobody is accountable for. Replace `'PII'` with the client's tag (`SELECT tag_name, count(*) FROM bridge_asset_tag GROUP BY 1` lists them). If the client classifies sensitivity with an **attribute** instead (e.g. *Personal Data*), swap the tag join for an `EXISTS` on `fact_attribute`.
 *Watch out:* same ownership caveat as *Which Business Terms have no owner?* (community-level owners are invisible).
 
 ### 31. Which attribute types are used most, and how are they typed?

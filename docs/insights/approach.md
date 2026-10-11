@@ -85,6 +85,7 @@ Each row names the questions behind it; the SQL is in the [cookbook](cookbook.md
 * **Ownership is partly invisible** (community-level), and inherited rows look direct.
 * **History starts the day you start collecting.** Nothing older than Collibra's retention can be recovered.
 * **Usage questions depend on an optional table** that has to be confirmed with the client's Collibra administrator.
+* **Vocabularies are local and often messy.** Statuses differ per workflow and include ad-hoc values; classification (personal data, confidentiality) may live in **attributes rather than tags**, sometimes duplicated across languages or teams. Agree the client's definitions of "approved", "owned" and "sensitive" before computing anything.
 * **Most of the volume is harvested, not curated.** Integrations create columns, code values and their technical attributes in bulk; human documentation is a much smaller share. Coverage KPIs must say which one they measure.
 * **Personal data** (names, emails, usernames) sits in responsibilities and view events; model it minimally.
 

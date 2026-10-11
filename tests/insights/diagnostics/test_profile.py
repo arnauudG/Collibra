@@ -56,3 +56,4 @@ def test_scope_and_glossary_sections_on_the_fixture(snap):
     assert "business_assets_in_scope: 2" in text and "collibra_operating_model_assets: 0" in text
     assert "structural_relations: 0" in text and "semantic_relations: 1" in text
     assert "Term | Definition | 1 | 2 | 50.0" in text
+    assert "## traceability" in text and "Term | 2 | 0 | 0 | 0 | 2" in text   # the fixture links two terms to each other only
