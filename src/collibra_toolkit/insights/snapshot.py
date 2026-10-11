@@ -6,7 +6,7 @@ from pathlib import Path
 
 import duckdb
 
-from .tables import DOCUMENTED_TABLES
+from .tables import CORE_TABLES, DOCUMENTED_TABLES, OPTIONAL_TABLES, table_depth
 
 
 class Snapshot:
@@ -43,7 +43,7 @@ class Snapshot:
         for f in self.path.rglob("*.parquet"):
             rel = f.relative_to(self.path).parent
             parts = rel.parts
-            depth = next((i for i, p in enumerate(parts) if "=" in p), len(parts))
+            depth = table_depth(parts)
             folders.add(self.path.joinpath(*parts[:depth]) if depth else self.path)
         return folders
 
@@ -52,7 +52,12 @@ class Snapshot:
         return [t for t in self.tables if t not in DOCUMENTED_TABLES]
 
     def missing(self) -> list[str]:
-        return [t for t in DOCUMENTED_TABLES if t not in self.tables]
+        """Core tables (the eight every setup guide loads) that this snapshot lacks."""
+        return [t for t in CORE_TABLES if t not in self.tables]
+
+    def optional_absent(self) -> list[str]:
+        """Documented optional tables (e.g. ``view_events``) that this snapshot lacks."""
+        return [t for t in OPTIONAL_TABLES if t not in self.tables]
 
     def describe(self, table: str):
         """Column names and types, straight from the Parquet files."""

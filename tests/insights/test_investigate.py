@@ -1,7 +1,7 @@
 from test_model import snap  # noqa: F401  (fixture: synthetic rows, real column names)
 
-from collibra_insights import CollibraNotFound
-from collibra_insights.investigate import live_report, resolve_id, snapshot_report
+from collibra_toolkit import CollibraNotFound
+from collibra_toolkit.insights.investigate import live_report, resolve_id, snapshot_report
 
 
 def test_snapshot_report_sections(snap, tmp_path):  # noqa: F811

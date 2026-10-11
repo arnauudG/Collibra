@@ -3,8 +3,9 @@ import datetime as dt
 import pytest
 from fakes import FakeResp, FakeSession, zip_bytes
 
-from collibra_insights import CollibraClient, CollibraError, CollibraNotFound, InsightsClient
-from collibra_insights.insights import retention_note, validate_snapshot_date
+from collibra_toolkit import CollibraClient, CollibraError, CollibraNotFound
+from collibra_toolkit.insights import InsightsClient
+from collibra_toolkit.insights.client import retention_note, validate_snapshot_date
 
 TODAY = dt.date(2026, 10, 11)
 

@@ -9,8 +9,8 @@ from __future__ import annotations
 from collections import Counter
 from pathlib import Path
 
-from .client import CollibraClient, CollibraHTTPError, CollibraNotFound
-from .explore import Snapshot
+from ..client import CollibraClient, CollibraHTTPError, CollibraNotFound
+from .snapshot import Snapshot
 
 # a responsibility whose asset_id is set but matches no exported asset
 _UNRESOLVED = """
@@ -77,6 +77,12 @@ SECTIONS: list[tuple[str, str]] = [
         SELECT 'community' AS object, is_community_system AS is_system, count(DISTINCT community_id) AS n FROM community GROUP BY 2
         UNION ALL SELECT 'domain', is_domain_system, count(*) FROM domain GROUP BY 2
         UNION ALL SELECT 'asset', is_asset_system, count(*) FROM asset GROUP BY 2"""),
+    ("domains with / without assets in the export (Collibra documents domains 'that contain assets')", """
+        SELECT count(*) AS domains, sum((n = 0)::INT) AS without_assets,
+               sum((n = 0 AND is_system)::INT) AS without_assets_and_system
+        FROM (SELECT d.domain_id, d.is_domain_system AS is_system, count(a.asset_id) AS n
+              FROM domain d LEFT JOIN asset a ON a.snapshot_date = d.snapshot_date AND a.domain_id = d.domain_id
+              GROUP BY 1, 2)"""),
     ("exported domains by type (top 12)", """
         SELECT domain_type_name, count(*) AS n FROM domain GROUP BY 1 ORDER BY 2 DESC LIMIT 12"""),
     ("unresolved responsibility ids: where else do they appear?", f"""
@@ -121,8 +127,9 @@ def _total(client: CollibraClient, path: str, **params) -> int | None:
     return client.get_json(path, {"limit": 1, "countLimit": -1, **params}).get("total")
 
 
-def resolve_id(client: CollibraClient, id_: str) -> str:
-    """Ask the live API what an id is. Returns the kind (and type name), never names."""
+def resolve_id(client: CollibraClient, id_: str, domain_types: dict[str, str] | None = None) -> str:
+    """Ask the live API what an id is. Returns the kind, type and (for assets) the kind of domain it
+    lives in, never names. ``domain_types`` maps exported domain ids to their type names."""
     for kind, path in (("asset", "/assets/"), ("domain", "/domains/"), ("community", "/communities/")):
         try:
             obj = client.get_json(path + id_)
@@ -130,9 +137,39 @@ def resolve_id(client: CollibraClient, id_: str) -> str:
             continue
         except CollibraHTTPError as exc:
             return f"{kind}? HTTP {exc.status_code}"
+        label = kind
         type_name = (obj.get("type") or {}).get("name")
-        return kind + (f" (type {type_name})" if type_name else "")
+        if type_name:
+            label += f" (type {type_name})"
+        if kind == "asset" and domain_types is not None:
+            dom = (obj.get("domain") or {}).get("id")
+            if dom:
+                label += f" in {domain_types[dom]} domain" if dom in domain_types else " in a domain not in the export"
+        return label
     return "not found as asset, domain or community"
+
+
+def probe_role(client: CollibraClient, role_id: str) -> str:
+    """Ask the responsibilities API which kind of resource a role is attached to.
+
+    Field names are tolerant on purpose (the schema was not verified): we report the item keys we
+    saw, so a surprising answer is still informative.
+    """
+    try:
+        page = client.get_json("/responsibilities", {"roleIds": [role_id], "limit": 20})
+    except CollibraHTTPError as exc:
+        return f"HTTP {exc.status_code}"
+    items = page.get("results", [])
+    if not items:
+        return "no results"
+
+    def resource_type(item: dict) -> str:
+        res = item.get("baseResource") or item.get("resource") or {}
+        return res.get("resourceType") or res.get("resourceDiscriminator") or res.get("type") or "?"
+
+    roles = Counter((i.get("role") or {}).get("name") for i in items)
+    return (f"item keys {sorted(items[0])}; resource types {dict(Counter(map(resource_type, items)))}; "
+            f"role names in result {dict(roles)}")
 
 
 def _ids(snap: Snapshot, sql: str, n: int = 8, spread: bool = False) -> list[str]:
@@ -178,13 +215,15 @@ def live_report(client: CollibraClient, snap: Snapshot) -> str:
             "SELECT d.community_id AS id FROM domain d LEFT JOIN community c ON c.snapshot_date = d.snapshot_date "
             "AND c.community_id = d.community_id WHERE c.community_id IS NULL"),
     }
-    roles = [r[0] for r in snap.sql(f"SELECT DISTINCT role_name FROM ({_UNRESOLVED}) ORDER BY 1").fetchall()]
+    domain_types = dict(snap.sql("SELECT domain_id, domain_type_name FROM domain").fetchall())
+    roles = snap.sql(f"SELECT role_name, any_value(role_id) FROM ({_UNRESOLVED}) GROUP BY 1 ORDER BY 1").fetchall()
     out.append("\n## live lookup: what unresolved responsibility ids are (15 ids per role, spread sample)")
-    for role in roles:
+    for role, role_id in roles:
         safe = role.replace("'", "''")
         ids = _ids(snap, f"SELECT asset_id AS id FROM ({_UNRESOLVED}) WHERE role_name = '{safe}'", 15, spread=True)
-        tally = Counter(resolve_id(client, i) for i in ids)
+        tally = Counter(resolve_id(client, i, domain_types) for i in ids)
         out.append(f"{role}: {dict(tally)}")
+        out.append(f"  responsibilities API for this role: {probe_role(client, role_id)}")
     for title, ids in samples.items():
         out.append(f"\n## live lookup: {title} (sample of {len(ids)})")
         out += [f"{i[:8]}… -> {resolve_id(client, i)}" for i in ids] or ["(none)"]

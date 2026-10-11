@@ -6,13 +6,20 @@ import calendar
 import datetime as dt
 import os
 import shutil
+import tempfile
 import warnings
 import zipfile
 from pathlib import Path
 
-from .client import CollibraClient, CollibraError, CollibraNotFound
+from ..client import CollibraClient, CollibraError, CollibraNotFound
+from .tables import table_name
 
-DIRECT_DOWNLOAD = "/reporting/insights/directDownload"  # relative to /rest/2.0
+# Paths relative to /rest/2.0. "direct" redirects to a pre-signed storage URL (recommended);
+# "legacy" streams through Collibra and is documented as soon to be deprecated.
+ENDPOINTS = {
+    "direct": "/reporting/insights/directDownload",
+    "legacy": "/reporting/insights/download",
+}
 
 
 def retention_note(d: dt.date, today: dt.date) -> str | None:
@@ -53,25 +60,20 @@ class InsightsClient:
     def from_env(cls, **kwargs) -> InsightsClient:
         return cls(CollibraClient.from_env(**kwargs))
 
-    def download_snapshot(self, snapshot_date: str | dt.date, dest: str | Path) -> Path:
-        """Download and extract one Insights snapshot; return the extraction folder.
+    def _fetch(self, d: dt.date, endpoint: str, target: Path) -> None:
+        """Stream the snapshot ZIP to ``target`` atomically (``.part`` file, then rename).
 
-        directDownload answers with a redirect to a pre-signed cloud-storage URL
-        (valid ~60s), so redirects must be followed. ``requests`` drops the
-        Authorization header on cross-host redirects, which is what we want.
+        The download endpoint answers with a redirect to a pre-signed cloud-storage URL
+        (valid ~60s), so redirects must be followed. ``requests`` drops the Authorization
+        header on cross-host redirects, which is what we want.
         """
-        d = validate_snapshot_date(snapshot_date)
-        dest = Path(dest)
-        out = dest / f"insights-{d.isoformat()}"
-        dest.mkdir(parents=True, exist_ok=True)
-        zip_path = dest / f"insights-{d.isoformat()}.zip"
-        part = zip_path.with_name(zip_path.name + ".part")
-        staging = dest / f".insights-{d.isoformat()}.extracting"
-
+        if endpoint not in ENDPOINTS:
+            raise CollibraError(f"endpoint must be one of {sorted(ENDPOINTS)}, got {endpoint!r}")
+        part = target.with_name(target.name + ".part")
         try:
             try:
                 resp = self.client.request(
-                    "GET", DIRECT_DOWNLOAD, params={"snapshotDate": d.isoformat(), "format": "zip"}, stream=True
+                    "GET", ENDPOINTS[endpoint], params={"snapshotDate": d.isoformat(), "format": "zip"}, stream=True
                 )
             except CollibraNotFound as exc:
                 raise CollibraNotFound(
@@ -83,8 +85,20 @@ class InsightsClient:
                         fh.write(chunk)
             finally:
                 resp.close()
-            os.replace(part, zip_path)
+            os.replace(part, target)
+        finally:
+            part.unlink(missing_ok=True)
 
+    def download_snapshot(self, snapshot_date: str | dt.date, dest: str | Path, endpoint: str = "direct") -> Path:
+        """Download and extract one Insights snapshot; return the extraction folder."""
+        d = validate_snapshot_date(snapshot_date)
+        dest = Path(dest)
+        out = dest / f"insights-{d.isoformat()}"
+        dest.mkdir(parents=True, exist_ok=True)
+        zip_path = dest / f"insights-{d.isoformat()}.zip"
+        staging = dest / f".insights-{d.isoformat()}.extracting"
+        try:
+            self._fetch(d, endpoint, zip_path)
             shutil.rmtree(staging, ignore_errors=True)
             try:
                 with zipfile.ZipFile(zip_path) as zf:
@@ -98,6 +112,19 @@ class InsightsClient:
             shutil.rmtree(out, ignore_errors=True)  # no stale files from an earlier extraction
             staging.rename(out)
         finally:
-            part.unlink(missing_ok=True)
             shutil.rmtree(staging, ignore_errors=True)
         return out
+
+    def list_tables(self, snapshot_date: str | dt.date, endpoint: str = "direct") -> list[str]:
+        """Table folders inside a snapshot ZIP, without extracting it (the ZIP is downloaded to a temp file)."""
+        d = validate_snapshot_date(snapshot_date)
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "snapshot.zip"
+            self._fetch(d, endpoint, target)
+            try:
+                with zipfile.ZipFile(target) as zf:
+                    names = zf.namelist()
+            except zipfile.BadZipFile:
+                raise CollibraError("downloaded file is not a valid ZIP") from None
+        tables = {table_name(Path(n).parent.parts) for n in names if n.endswith(".parquet")}
+        return sorted(t for t in tables if t)

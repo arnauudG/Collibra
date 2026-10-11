@@ -4,8 +4,8 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
-from collibra_insights import Snapshot
-from collibra_insights.model import build_model, check_model
+from collibra_toolkit.insights import Snapshot
+from collibra_toolkit.insights.model import build_model, check_model
 
 D = dt.date(2026, 10, 10)
 # SYNTHETIC rows using the REAL column names observed in a snapshot.

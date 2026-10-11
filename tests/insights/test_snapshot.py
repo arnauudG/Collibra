@@ -4,7 +4,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
-from collibra_insights import Snapshot
+from collibra_toolkit.insights import Snapshot
 
 
 def _make_snapshot(root):
@@ -49,7 +49,7 @@ def test_several_snapshots_under_one_parent_are_unioned(tmp_path):
 
 
 def test_cli_query_from_file(tmp_path, capsys):
-    from collibra_insights.cli import main
+    from collibra_toolkit.insights.cli import main
 
     _make_snapshot(tmp_path)
     q = tmp_path / "q.sql"
@@ -59,7 +59,7 @@ def test_cli_query_from_file(tmp_path, capsys):
 
 
 def test_cli_query(tmp_path, capsys):
-    from collibra_insights.cli import main
+    from collibra_toolkit.insights.cli import main
 
     _make_snapshot(tmp_path)
     main(["query", str(tmp_path), "select count(*) as n from asset"])
@@ -72,7 +72,7 @@ def test_snapshot_empty_dir_errors(tmp_path):
 
 
 def test_cli_reports_errors_in_one_line(monkeypatch):
-    from collibra_insights.cli import main
+    from collibra_toolkit.insights.cli import main
 
     monkeypatch.delenv("COLLIBRA_URL", raising=False)
     with pytest.raises(SystemExit) as info:

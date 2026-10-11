@@ -2,7 +2,7 @@ import pytest
 import requests
 from fakes import FakeResp, FakeSession
 
-from collibra_insights import (
+from collibra_toolkit import (
     CollibraAuthError,
     CollibraClient,
     CollibraError,
@@ -91,7 +91,7 @@ def test_paginate_empty():
 
 
 def test_ping_reports_counts_only():
-    from collibra_insights.cli import ping
+    from collibra_toolkit.health import ping
 
     items = [{"id": f"id{i}", "name": "SECRET"} for i in range(5)]
     first = FakeResp(payload={"results": items[:2], "total": 5, "limit": 2, "offset": 0})

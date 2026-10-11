@@ -6,8 +6,7 @@ joins therefore always match on (snapshot_date, id).
 
 from __future__ import annotations
 
-from .explore import Snapshot
-from .tables import DOCUMENTED_TABLES
+from .snapshot import Snapshot
 
 _USER_PII = "user_firstname, user_lastname, user_email,"
 
@@ -109,6 +108,8 @@ def build_model(snap: Snapshot, include_pii: bool = False) -> list[str]:
     if absent:
         raise ValueError(f"snapshot lacks tables needed for the model: {', '.join(absent)}")
     views = _VIEWS + [("dim_user", _DIM_USER.format(pii=_USER_PII if include_pii else ""))]
+    if "view_events" in snap.tables:  # optional table; documented columns, passed through untouched
+        views.append(("fact_view_event", "SELECT * FROM view_events"))
     for name, sql in views:
         snap.con.execute(f"CREATE OR REPLACE VIEW {name} AS {sql}")
     return [name for name, _ in views]
@@ -120,4 +121,4 @@ def check_model(snap: Snapshot) -> dict[str, int]:
     return {name: snap.con.execute(sql).fetchone()[0] for name, sql in _CHECKS.items()}
 
 
-__all__ = ["build_model", "check_model", "DOCUMENTED_TABLES"]
+__all__ = ["build_model", "check_model"]

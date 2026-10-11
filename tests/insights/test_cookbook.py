@@ -6,9 +6,9 @@ from pathlib import Path
 import pytest
 from test_model import snap  # noqa: F401  (fixture)
 
-from collibra_insights.model import build_model
+from collibra_toolkit.insights.model import build_model
 
-COOKBOOK = Path(__file__).resolve().parents[1] / "docs" / "cookbook.md"
+COOKBOOK = Path(__file__).resolve().parents[2] / "docs" / "insights" / "cookbook.md"
 BLOCKS = re.findall(r"```sql\n(.*?)```", COOKBOOK.read_text(), flags=re.S)
 
 
