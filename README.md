@@ -60,3 +60,7 @@ folder = InsightsClient(client).download_snapshot("2026-10-10", "snapshots")
 | Star-schema views + `check` | Implemented (`model.py`), tested on **synthetic** data with real column names; not yet run on the real snapshot |
 
 Requires Collibra Platform 5.7+ and a Collibra Insights licence. Snapshots may contain sensitive governance data and are git-ignored.
+
+## Investigating the export
+
+`collibra-insights investigate <snapshot>` prints aggregate evidence on open questions (file layout, attribute `kind` mapping, `community.level`, Issue-related orphans, unresolved responsibilities). Add `--live` to compare against the REST API of the same instance (totals, per-type counts, and what unresolved ids actually are). Output contains counts, type names and id prefixes only. Findings are recorded in `docs/data-modeling.md`.

@@ -9,6 +9,7 @@ from itertools import islice
 from .client import CollibraAuthError, CollibraClient, CollibraError
 from .explore import Snapshot
 from .insights import InsightsClient
+from .investigate import live_report, snapshot_report
 from .model import build_model, check_model
 
 
@@ -46,11 +47,20 @@ def _run(argv: list[str] | None = None) -> None:
     q.add_argument("path")
     q.add_argument("sql")
     q.add_argument("--model", action="store_true", help="also create the dim_/fact_ views first")
+    i = sub.add_parser("investigate", help="aggregate evidence about open questions in an export")
+    i.add_argument("path")
+    i.add_argument("--live", action="store_true", help="also compare with the REST API (needs credentials)")
     sub.add_parser("ping", help="check credentials and pagination against COLLIBRA_URL")
     k = sub.add_parser("check", help="build the model and report conformance violations")
     k.add_argument("path")
     args = p.parse_args(argv)
 
+    if args.cmd == "investigate":
+        snap = Snapshot(args.path)
+        print(snapshot_report(snap))
+        if args.live:
+            print("\n" + live_report(CollibraClient.from_env(), snap))
+        return
     if args.cmd == "ping":
         print("\n".join(ping(CollibraClient.from_env())))
         return

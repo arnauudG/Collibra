@@ -19,7 +19,7 @@ def _write(root, table, rows):
 
 @pytest.fixture
 def snap(tmp_path):
-    comm = dict(community_description=None, is_community_system=False, uri="u", parent_community_id=None)
+    comm = dict(community_description=None, is_community_system=False, uri="u", parent_community_id=None, level_community_id="c1")
     _write(tmp_path, "community", [  # c1 repeated for two hierarchy levels
         dict(community_id="c1", community_name="Root", level=1, **comm),
         dict(community_id="c1", community_name="Root", level=2, **comm),
