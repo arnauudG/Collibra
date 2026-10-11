@@ -19,10 +19,10 @@ def _write(root, table, rows):
 
 @pytest.fixture
 def snap(tmp_path):
-    comm = dict(community_description=None, is_community_system=False, uri="u", parent_community_id=None, level_community_id="c1")
+    comm = dict(community_description=None, is_community_system=False, uri="u", parent_community_id="p1")
     _write(tmp_path, "community", [  # c1 repeated for two hierarchy levels
-        dict(community_id="c1", community_name="Root", level=1, **comm),
-        dict(community_id="c1", community_name="Root", level=2, **comm),
+        dict(community_id="c1", community_name="Root", level=1, level_community_id="p1", level_community_name="Parent", **comm),
+        dict(community_id="c1", community_name="Root", level=2, level_community_id="c1", level_community_name="Root", **comm),
     ])
     _write(tmp_path, "domain", [dict(
         domain_id="d1", domain_name="Dom", domain_description=None, domain_type_id="t", domain_type_name="Glossary",
@@ -64,6 +64,8 @@ def test_dedupes_and_flags(snap):
     build_model(snap)
     q = lambda s: snap.sql(s).fetchall()
     assert q("select count(*) from dim_community") == [(1,)]           # repeated levels collapsed
+    assert q("select depth, is_root from dim_community") == [(2, False)]
+    assert q("select ancestor_community_id from bridge_community_ancestor order by ancestor_level") == [("p1",), ("c1",)]
     assert q("select count(*) from fact_relation") == [(1,)]           # mirrored pair -> one row
     assert q("select count(*) from bridge_complex_relation") == [(2,)]  # one row per participant
     assert q("select asset_id from dim_asset where is_domain_missing") == [("a2",)]
@@ -84,7 +86,7 @@ def test_pii_excluded_by_default(snap):
 def test_checks_report_orphan_only(snap):
     res = check_model(snap)
     assert res["asset_missing_domain"] == 1
-    assert res["relation_missing_asset"] == 0
+    assert res["relation_missing_asset"] == 0 and res["community_parent_mismatch"] == 0
     assert res["relation_ids_not_stored_twice"] == 0
     assert res["dim_asset_duplicate_keys"] == 0 and res["dim_community_duplicate_keys"] == 0
 

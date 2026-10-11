@@ -52,13 +52,13 @@ There is no standalone user table: users only appear inside `responsibility`, so
 
 **a) Snapshots are the time axis.** Keep `snapshot_date` on every fact and join to `dim_date`. Loading month-end snapshots gives trends cheaply; daily gives detail for the last 31 days.
 
-**b) Attributes are typed EAV.** One row per attribute with the value in one of: `expression_long` (text), `boolean_value`, `datetime_value`, `numeric_value`, discriminated by `kind` (observed: STRING, NUMERIC, BOOLEAN, MULTI_VALUE_LIST, SINGLE_VALUE_LIST, DATE, SCRIPT). Which `kind` fills which column is **not verified**, so `fact_attribute.value_as_text` coalesces all four columns instead of assuming. Keep `fact_attribute` long, and pivot only chosen attribute types into wide marts per asset type (`mart_business_term`: definition, description, …). A global pivot is unstable because custom attribute types differ per environment.
+**b) Attributes are typed EAV (verified).** One row per attribute. `expression_long` holds a text rendering for essentially every kind; the typed column adds the real value: NUMERIC → `numeric_value`, BOOLEAN → `boolean_value`, DATE → `datetime_value`. STRING, SINGLE/MULTI_VALUE_LIST and SCRIPT use `expression_long` only (counts on 2026-10-10: STRING 69,313; NUMERIC 24,579; BOOLEAN 19,880; MULTI_VALUE_LIST 1,603; SINGLE_VALUE_LIST 1,275; DATE 284; SCRIPT 1). A few rows have a typed value but no text (56 NUMERIC) or an empty text (34 STRING), so `fact_attribute.value_as_text` coalesces all four columns. Keep `fact_attribute` long, and pivot only chosen attribute types into wide marts per asset type. *Not yet checked:* how multi-value lists are encoded inside `expression_long`.
 
 **c) Every relation is stored twice (verified).** In the 2026-10-10 snapshot each `relation_id` has exactly two rows, `direction = 'head -> tail'` and `'tail -> head'` (27,360 ids, 54,720 rows). So `count(*)` over `relation` doubles everything. Build `fact_relation` with **one row per `relation_id`** by keeping `direction = 'head -> tail'`, and expose the reverse reading as a view if needed. The two rows are exact mirrors (`asset_id1`/`asset_id2` swapped): 27,360 of 27,360 verified.
 
 **d) Complex relations are one row per participant** (`relation_role` + `asset_id` under a `complex_relation_id`; 9,710 rows / 4,823 ids, about 2 each). Model as a bridge keyed by `complex_relation_id`.
 
-**e) Community hierarchy is pre-flattened.** `level` and `level_community_*` give one row per community × level, so `community_id` repeats (357 rows / 187 ids, verified; the live REST API also reports 187 communities). `dim_community` keeps one row per `community_id`. An ancestors bridge is **not built yet**: what `level` means exactly (the community's own depth vs. the ancestor's) still needs checking.
+**e) Community hierarchy is a root-to-self path per community (verified).** A community at depth *d* has exactly *d* rows, `level` 1..*d*, where `level_community_id` is the ancestor at that level and level *d* is the community itself (187 of 187 communities satisfy this; 62 roots; deepest = 4). `dim_community` therefore has one row per community with `depth` and `is_root`, and `bridge_community_ancestor` lists every ancestor. The `community_parent_mismatch` check tests that level *d−1* equals `parent_community_id`.
 
 ## 5. Checks run so far, and still open
 
@@ -88,3 +88,19 @@ These are aggregates only (no names or emails).
 2. `attribute`, `relation`, `asset_tag` only reference existing `asset_id`s. `responsibility_missing_asset` is nonzero on the real snapshot (5,027 of 20,036) and **not** explained by domains or communities (checked: none of those ids match a domain or community). Treat it as an open data-quality question.
 3. Row counts within tolerance of the previous snapshot.
 4. Excluded types (Roles, Workflow Definitions) are absent.
+
+## 8. What we know about gaps (export vs. live instance, 2026-10-10)
+
+Evidence from `collibra-insights investigate --live`. Confidence is stated per finding.
+
+| Finding | Evidence | Confidence |
+|---|---|---|
+| Export is a **superset** of what the REST list endpoints return | assets: export 23,202 vs live 23,099 (**+103** = 101 *Data Usage* + 2 *Data Issue*, types the live list reports as 0); domains: export 585 vs live 398 (**+187** = the 187 *Issues Vocabulary Type* domains); communities equal (187) | High for the counts. Why the live list hides them is **unverified** (a default filter such as hidden/meta is likely) |
+| Nothing visible in the live list is missing from the export (by count) | the +103 / +187 differences are fully explained by the hidden types above | Medium: equal totals do not prove identical members |
+| The 14 orphan assets sit in a built-in **Issue Classification** domain that exists live but is absent from the export's `domain` table; the 1 orphan domain sits in a community (id `00000000…`) that exists live but is absent from the export | live lookups of those ids succeed; the ids use the system-style `00000000-` prefix | High that they exist and are built-in; the exclusion rule itself is unverified |
+| 5,027 unresolved responsibilities are limited to **3 roles** (Community Manager 4,904, Data Quality Manager 122, Data Quality Viewer 1), and every row of those roles is unresolved | role breakdown | High |
+| Their ids are almost one per row (5,026 ids / 5,027 rows), so they are not shared resources | counts | High |
+| Some of them are `Role Type` assets, an excluded type per Collibra's docs | live lookup of the 8 *lowest* ids only | **Low**: biased sample. The spread sample in `investigate --live` is meant to settle it |
+| No Usage Analytics table | only `.parquet` files, 8 top-level folders | High that it is absent; cause unknown |
+
+Practical rule: **`LEFT JOIN` from facts to dimensions and keep unmatched rows**, since a few rows legitimately point at built-in objects the export omits.

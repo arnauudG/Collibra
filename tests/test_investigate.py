@@ -6,7 +6,7 @@ from collibra_insights.investigate import live_report, resolve_id, snapshot_repo
 
 def test_snapshot_report_sections(snap, tmp_path):  # noqa: F811
     text = snapshot_report(snap)
-    for title in ("file layout", "attribute kind", "community.level", "responsibilities: overview",
+    for title in ("file layout", "attribute kind", "community.level", "responsibilities: overview", "shape of the ids", "is_system flags",
                   "unresolved responsibility ids", "assets whose domain is missing"):
         assert title in text
     assert ".parquet" in text
@@ -42,11 +42,13 @@ def test_resolve_id():
 
 
 def test_live_report_flags_differences(snap):  # noqa: F811
-    totals = {"/communities": {"total": 1}, "/domains": {"total": 1}, "/assets": lambda p: {"total": 9 if "typeIds" not in p else (7 if p["typeIds"] == ["t-term"] else 0)}}
+    totals = {"/communities": {"total": 1}, "/domains": {"total": 1}, "/assets": lambda p: {"total": 9 if "typeIds" not in p else (1 if p["typeIds"] == ["t-term"] else 0)}}
     c = FakeLive(totals, types=[{"id": "t-term", "name": "Term"}, {"id": "t-x", "name": "Hidden Type"}])
     text = live_report(c, snap)
     assert "assets: live 9 | export 2" in text
-    assert "Term | 7 | 2" in text and "Hidden Type" not in text   # live 0 == export 0, so not listed
+    assert "Term | 1 | 2" in text and "Hidden Type" not in text   # only types where export > live
+    assert "sum of excess in export: 1" in text
+    assert "excludeMeta=false" in text and "id shape" not in text
     assert "not found as asset, domain or community" in text      # orphan domain id 'gone'
     assert "WARNING" not in text
 

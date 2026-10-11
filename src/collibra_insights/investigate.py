@@ -67,6 +67,18 @@ SECTIONS: list[tuple[str, str]] = [
         FROM responsibility r
         LEFT JOIN asset a ON a.snapshot_date = r.snapshot_date AND a.asset_id = r.asset_id
         GROUP BY 1"""),
+    ("unresolved responsibilities: shape of the ids, per role", f"""
+        SELECT role_name, count(*) AS rows_, count(DISTINCT asset_id) AS distinct_asset_ids,
+               count(DISTINCT user_id) AS distinct_users, count(DISTINCT role_id) AS distinct_role_ids,
+               sum((asset_id = user_id)::INT) AS asset_id_equals_user_id,
+               sum((asset_id LIKE '00000000-%')::INT) AS system_style_ids
+        FROM ({_UNRESOLVED}) GROUP BY 1 ORDER BY 2 DESC"""),
+    ("is_system flags in the export", """
+        SELECT 'community' AS object, is_community_system AS is_system, count(DISTINCT community_id) AS n FROM community GROUP BY 2
+        UNION ALL SELECT 'domain', is_domain_system, count(*) FROM domain GROUP BY 2
+        UNION ALL SELECT 'asset', is_asset_system, count(*) FROM asset GROUP BY 2"""),
+    ("exported domains by type (top 12)", """
+        SELECT domain_type_name, count(*) AS n FROM domain GROUP BY 1 ORDER BY 2 DESC LIMIT 12"""),
     ("unresolved responsibility ids: where else do they appear?", f"""
         WITH u AS (SELECT DISTINCT asset_id AS id FROM ({_UNRESOLVED}))
         SELECT (SELECT count(*) FROM u) AS ids,
@@ -123,8 +135,10 @@ def resolve_id(client: CollibraClient, id_: str) -> str:
     return "not found as asset, domain or community"
 
 
-def _ids(snap: Snapshot, sql: str, n: int = 8) -> list[str]:
-    return [r[0] for r in snap.sql(f"SELECT DISTINCT id FROM ({sql}) ORDER BY id LIMIT {n}").fetchall()]
+def _ids(snap: Snapshot, sql: str, n: int = 8, spread: bool = False) -> list[str]:
+    """``spread`` orders by a hash so the sample is not just the lowest ids (those can be special)."""
+    order = "hash(id)" if spread else "id"
+    return [r[0] for r in snap.sql(f"SELECT DISTINCT id FROM ({sql}) ORDER BY {order} LIMIT {n}").fetchall()]
 
 
 def live_report(client: CollibraClient, snap: Snapshot) -> str:
@@ -136,9 +150,14 @@ def live_report(client: CollibraClient, snap: Snapshot) -> str:
     }
     totals = {k: _total(client, f"/{k}") for k in snap_counts}
     out += [f"{k}: live {totals[k]} | export {snap_counts[k]}" for k in snap_counts]
+    out.append("probe: same totals with excludeMeta=false (parameter name unverified; unchanged numbers mean it was ignored)")
+    for k in snap_counts:
+        try:
+            out.append(f"{k}: {_total(client, f'/{k}', excludeMeta='false')}")
+        except CollibraHTTPError as exc:
+            out.append(f"{k}: HTTP {exc.status_code}")
 
     samples = {
-        "unresolved responsibility ids": _ids(snap, f"SELECT asset_id AS id FROM ({_UNRESOLVED})"),
         "missing domain ids of orphan assets": _ids(
             snap,
             "SELECT a.domain_id AS id FROM asset a LEFT JOIN domain d ON d.snapshot_date = a.snapshot_date "
@@ -152,11 +171,19 @@ def live_report(client: CollibraClient, snap: Snapshot) -> str:
             "SELECT d.community_id AS id FROM domain d LEFT JOIN community c ON c.snapshot_date = d.snapshot_date "
             "AND c.community_id = d.community_id WHERE c.community_id IS NULL"),
     }
+    roles = [r[0] for r in snap.sql(f"SELECT DISTINCT role_name FROM ({_UNRESOLVED}) ORDER BY 1").fetchall()]
+    out.append("\n## live lookup: what unresolved responsibility ids are (15 ids per role, spread sample)")
+    for role in roles:
+        safe = role.replace("'", "''")
+        ids = _ids(snap, f"SELECT asset_id AS id FROM ({_UNRESOLVED}) WHERE role_name = '{safe}'", 15, spread=True)
+        tally = Counter(resolve_id(client, i) for i in ids)
+        out.append(f"{role}: {dict(tally)}")
     for title, ids in samples.items():
         out.append(f"\n## live lookup: {title} (sample of {len(ids)})")
         out += [f"{i[:8]}… -> {resolve_id(client, i)}" for i in ids] or ["(none)"]
 
-    out.append("\n## live vs export: asset count per type (only types that differ)")
+    out.append("\n## live vs export: types where the EXPORT has more assets than the live list "
+               "(live counts include subtypes, so only this direction is meaningful)")
     live_types = list(client.paginate("/assetTypes", page_size=1000))
     snap_by_type = dict(snap.sql("SELECT asset_type_name, count(*) FROM asset GROUP BY 1").fetchall())
     rows, same_as_global = [], 0
@@ -165,12 +192,13 @@ def live_report(client: CollibraClient, snap: Snapshot) -> str:
         if live and live == totals["assets"]:
             same_as_global += 1
         exp = snap_by_type.get(t["name"], 0)
-        if live != exp:
+        if (live or 0) < exp:
             rows.append((t["name"], live, exp))
     if same_as_global >= 3:
         out.append("WARNING: the typeIds filter seems to be ignored (many types report the global total); "
                    "the per-type table below is NOT reliable.")
-    rows.sort(key=lambda r: abs((r[1] or 0) - r[2]), reverse=True)
+    rows.sort(key=lambda r: r[2] - (r[1] or 0), reverse=True)
     out.append("type | live | export")
-    out += [f"{n} | {a} | {b}" for n, a, b in rows[:40]] or ["(all types match)"]
+    out.append(f"sum of excess in export: {sum(b - (a or 0) for _, a, b in rows)} (export assets {snap_counts['assets']} vs live {totals['assets']})")
+    out += [f"{n} | {a} | {b}" for n, a, b in rows[:40]] or ["(none)"]
     return "\n".join(out)

@@ -16,8 +16,15 @@ _VIEWS = [
     ("dim_community", """
         SELECT DISTINCT ON (snapshot_date, community_id)
                snapshot_date, community_id, community_name, community_description,
-               is_community_system, uri AS community_uri, parent_community_id
+               is_community_system, uri AS community_uri, parent_community_id,
+               max(level) OVER (PARTITION BY snapshot_date, community_id) AS depth,
+               parent_community_id IS NULL AS is_root
         FROM community ORDER BY snapshot_date, community_id, level"""),
+    # one row per community per level: level 1 = root ... level depth = the community itself
+    ("bridge_community_ancestor", """
+        SELECT snapshot_date, community_id, level AS ancestor_level,
+               level_community_id AS ancestor_community_id, level_community_name AS ancestor_name
+        FROM community"""),
     ("dim_domain", """
         SELECT d.snapshot_date, d.domain_id, d.domain_name, d.domain_description,
                d.domain_type_id, d.domain_type_name, d.is_domain_system,
@@ -82,6 +89,7 @@ _CHECKS = {
     "responsibility_missing_asset": "SELECT count(*) FROM responsibility t LEFT JOIN asset a USING (snapshot_date, asset_id) WHERE t.asset_id IS NOT NULL AND a.asset_id IS NULL",
     "relation_missing_asset": "SELECT count(*) FROM fact_relation r LEFT JOIN asset a1 ON a1.snapshot_date = r.snapshot_date AND a1.asset_id = r.asset_id1 LEFT JOIN asset a2 ON a2.snapshot_date = r.snapshot_date AND a2.asset_id = r.asset_id2 WHERE a1.asset_id IS NULL OR a2.asset_id IS NULL",
     "relation_ids_not_stored_twice": "SELECT count(*) FROM (SELECT 1 FROM relation GROUP BY snapshot_date, relation_id HAVING count(*) <> 2)",
+    "community_parent_mismatch": "SELECT count(*) FROM community c JOIN (SELECT snapshot_date, community_id, max(level) AS d FROM community GROUP BY 1, 2) m USING (snapshot_date, community_id) WHERE c.level = m.d - 1 AND c.level_community_id IS DISTINCT FROM c.parent_community_id",
     "dim_asset_duplicate_keys": "SELECT count(*) - count(DISTINCT (snapshot_date, asset_id)) FROM dim_asset",
     "dim_community_duplicate_keys": "SELECT count(*) - count(DISTINCT (snapshot_date, community_id)) FROM dim_community",
 }
