@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import calendar
 import datetime as dt
+import os
+import shutil
+import warnings
 import zipfile
 from pathlib import Path
 
@@ -16,23 +19,31 @@ class CollibraError(Exception):
     pass
 
 
-def validate_snapshot_date(value: str | dt.date, today: dt.date | None = None) -> dt.date:
-    """Collibra keeps the last 31 daily snapshots plus each month-end (see docs).
+def retention_note(d: dt.date, today: dt.date) -> str | None:
+    """Collibra's documented retention: every day for 31 days, month-ends for 12 months,
+    year-ends indefinitely. Return a message if ``d`` falls outside that, else None."""
+    age = (today - d).days
+    month_end = d.day == calendar.monthrange(d.year, d.month)[1]
+    year_end = d.month == 12 and d.day == 31
+    if age <= 31 or (month_end and age <= 366) or year_end:
+        return None
+    return (f"{d} is outside the documented retention (last 31 days, month-ends for 12 months, "
+            "year-ends after that); the request may fail")
 
-    Raise early with a clear message rather than waiting for an opaque HTTP error.
-    """
+
+def validate_snapshot_date(value: str | dt.date, today: dt.date | None = None) -> dt.date:
+    """Reject malformed or future dates. Retention gaps only *warn*: Collibra's own pages
+    word the rule differently, so we don't block a request the server might still honour."""
     today = today or dt.date.today()
     try:
         d = value if isinstance(value, dt.date) else dt.datetime.strptime(value, "%Y-%m-%d").date()
     except ValueError:
         raise CollibraError(f"snapshot date must be YYYY-MM-DD, got {value!r}") from None
-    month_end = d.day == calendar.monthrange(d.year, d.month)[1]
     if d > today:
         raise CollibraError(f"snapshot date {d} is in the future")
-    if (today - d).days > 31 and not month_end:
-        raise CollibraError(
-            f"{d} is older than 31 days and not a month-end; only those snapshots are retained"
-        )
+    note = retention_note(d, today)
+    if note:
+        warnings.warn(note, stacklevel=2)
     return d
 
 
@@ -68,22 +79,37 @@ class CollibraClient:
         out = dest / f"insights-{d.isoformat()}"
         dest.mkdir(parents=True, exist_ok=True)
         zip_path = dest / f"insights-{d.isoformat()}.zip"
+        part = zip_path.with_name(zip_path.name + ".part")
+        staging = dest / f".insights-{d.isoformat()}.extracting"
 
-        resp = self.session.get(
-            self.base_url + DIRECT_DOWNLOAD,
-            params={"snapshotDate": d.isoformat(), "format": "zip"},
-            stream=True,
-            allow_redirects=True,
-            timeout=self.timeout,
-        )
-        if resp.status_code != 200:
-            raise CollibraError(f"download failed: HTTP {resp.status_code} {resp.text[:200]!r}")
-        with open(zip_path, "wb") as fh:
-            for chunk in resp.iter_content(1 << 20):
-                fh.write(chunk)
-        with zipfile.ZipFile(zip_path) as zf:
-            for name in zf.namelist():  # guard against zip-slip
-                if not (out / name).resolve().is_relative_to(out.resolve()):
-                    raise CollibraError(f"unsafe path in archive: {name}")
-            zf.extractall(out)
+        try:
+            resp = self.session.get(
+                self.base_url + DIRECT_DOWNLOAD,
+                params={"snapshotDate": d.isoformat(), "format": "zip"},
+                stream=True,
+                allow_redirects=True,
+                timeout=self.timeout,
+            )
+            if resp.status_code != 200:
+                raise CollibraError(f"download failed: HTTP {resp.status_code} {resp.text[:200]!r}")
+            with open(part, "wb") as fh:  # never leave a half-written .zip behind
+                for chunk in resp.iter_content(1 << 20):
+                    fh.write(chunk)
+            os.replace(part, zip_path)
+
+            shutil.rmtree(staging, ignore_errors=True)
+            try:
+                with zipfile.ZipFile(zip_path) as zf:
+                    for name in zf.namelist():  # guard against zip-slip
+                        if not (staging / name).resolve().is_relative_to(staging.resolve()):
+                            raise CollibraError(f"unsafe path in archive: {name}")
+                    zf.extractall(staging)
+            except zipfile.BadZipFile:
+                zip_path.unlink(missing_ok=True)
+                raise CollibraError("downloaded file is not a valid ZIP") from None
+            shutil.rmtree(out, ignore_errors=True)  # no stale files from an earlier extraction
+            staging.rename(out)
+        finally:
+            part.unlink(missing_ok=True)
+            shutil.rmtree(staging, ignore_errors=True)
         return out
