@@ -29,7 +29,7 @@ Detail and reasoning: [modeling guide](modeling.md).
 
 ## 3. Decisions a gold layer can support
 
-Each row names the questions behind it; the SQL is in the [cookbook](cookbook.md).
+Each row names the questions behind it; the SQL is in the [cookbook](cookbook.md). Collibra's own prebuilt Insights reports (*Data Maturity*, *Privacy & Risk Readiness*, *Process Register*) map onto the first row and the privacy row: a good sign these are the decisions Insights was designed for. Which rows apply to a given client depends on the capabilities they use; `collibra-insights profile` shows that.
 
 | Decision (typical owner) | Gold measure (additive) | Questions | Confidence |
 |---|---|---|---|
@@ -39,6 +39,7 @@ Each row names the questions behind it; the SQL is in the [cookbook](cookbook.md
 | **What to clean up or simplify** (platform owner) | assets by type, status, domain; stale assets; empty domains | [Which domains are empty?](cookbook.md#5-which-domains-are-empty); [What does the community tree look like?](cookbook.md#3-what-does-the-community-tree-look-like); [How many assets sit under each top-level community?](cookbook.md#4-how-many-assets-sit-under-each-top-level-community); [Which attribute types are used most, and how are they typed?](cookbook.md#31-which-attribute-types-are-used-most-and-how-are-they-typed) | High |
 | **What a change touches, is the catalogue linked to data** (architect) | assets with at least one relation; terms linked to technical assets | [Which assets have no relations at all?](cookbook.md#17-which-assets-have-no-relations-at-all); [Which Business Terms are linked to technical assets?](cookbook.md#20-which-business-terms-are-linked-to-technical-assets); [What is connected to this asset? (impact analysis, up to 3 hops)](cookbook.md#19-what-is-connected-to-this-asset-impact-analysis-up-to-3-hops) | Medium |
 | **How to balance stewardship workload** (team lead) | assets and domains per role and person | [Who is responsible for how much?](cookbook.md#12-who-is-responsible-for-how-much); [Which groups hold responsibilities, and for what?](cookbook.md#14-which-groups-hold-responsibilities-and-for-what); [Who gained or lost responsibilities between two snapshots?](cookbook.md#26-who-gained-or-lost-responsibilities-between-two-snapshots) | Medium |
+| **Are we ready for a regulation, is the processing register complete** (privacy office, DPO) | business processes per process register, with linked data sets and third parties; completeness of their required attributes | Collibra ships prebuilt *Privacy & Risk Readiness* and *Process Register* reports for this | Conditional: only if the client uses Collibra's privacy features (`profile` shows a *Privacy & risk* capability) |
 | **Is the platform adopted** (sponsor) | active users and views per day *(only with `view_events`)*; otherwise contribution by creator as a weak proxy | [Who creates the content?](cookbook.md#15-who-creates-the-content); with `view_events`: [How many people use Collibra each day?](cookbook.md#32-how-many-people-use-collibra-each-day), [Which assets are viewed most?](cookbook.md#33-which-assets-are-viewed-most), [Which content is never viewed?](cookbook.md#34-which-content-is-never-viewed) | Conditional |
 
 **A starter scorecard** (report each per snapshot, so the trend is the message):
@@ -80,7 +81,7 @@ Each row names the questions behind it; the SQL is in the [cookbook](cookbook.md
 ## 6. Suggested steps with a client
 
 1. Confirm the Insights licence and set up an OAuth integration application for access.
-2. Download one snapshot; reconcile it with the UI; list the client's real attribute, role, status and asset-type names ([playbook](client-playbook.md)).
+2. Download one snapshot and run `profile`: it shows which capabilities the client actually uses (so which rows of section 3 apply) and their real attribute, role, status and asset-type names. Reconcile the totals with the UI ([playbook](client-playbook.md)).
 3. Agree two or three decisions from section 3, each with a named owner.
 4. Build silver once; build one gold table per agreed decision.
 5. Start collecting history immediately, even before the gold tables are live.

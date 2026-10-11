@@ -36,6 +36,7 @@ collibra-insights tables-available 2026-10-10 --endpoint both
 collibra-insights download 2026-10-10                  # -> snapshots/insights-2026-10-10/
 collibra-insights explore  snapshots/insights-2026-10-10
 collibra-insights check    snapshots/insights-2026-10-10
+collibra-insights profile  snapshots                   # what the catalogue contains and says (+ changes between the last two)
 collibra-insights investigate snapshots/insights-2026-10-10 --live
 collibra-insights query    snapshots/insights-2026-10-10 --model --file q.sql
 ```

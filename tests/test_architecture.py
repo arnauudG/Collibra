@@ -32,6 +32,7 @@ ALLOWED = {
     f"{P}.insights.model": [f"{P}.insights.store", f"{P}.insights.model"],
     f"{P}.insights.diagnostics": [f"{P}._lazy", f"{P}.insights.diagnostics"],
     f"{P}.insights.diagnostics.offline": [f"{P}.insights.store"],
+    f"{P}.insights.diagnostics.profile": [f"{P}.insights.store", f"{P}.insights.model"],
     f"{P}.insights.diagnostics.live": [f"{P}.client", f"{P}.insights.store", f"{P}.insights.diagnostics.offline"],
     f"{P}.insights.cli": [P + "."],                                # the composition root may use anything
 }

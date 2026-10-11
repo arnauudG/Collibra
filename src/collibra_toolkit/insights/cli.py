@@ -41,6 +41,9 @@ def _parser() -> argparse.ArgumentParser:
     k = sub.add_parser("check", help="build the model and report conformance violations")
     k.add_argument("path")
 
+    f = sub.add_parser("profile", help="what a catalogue contains and says: aggregates and type names only")
+    f.add_argument("path", help="a snapshot, or a folder holding several (adds a comparison of the last two)")
+
     i = sub.add_parser("investigate", help="aggregate evidence about what an export contains")
     i.add_argument("path")
     i.add_argument("--live", action="store_true", help="also compare with the REST API (needs credentials)")
@@ -110,6 +113,10 @@ def _main(argv: list[str] | None = None) -> None:
 
         for name, n in check_model(_store()(args.path)).items():
             print(f"{'OK  ' if n == 0 else 'WARN'} {name}: {n}")
+    elif args.cmd == "profile":
+        from .diagnostics.profile import profile_report
+
+        print(profile_report(_store()(args.path)))
     elif args.cmd == "investigate":
         from .diagnostics import live_report, snapshot_report
 

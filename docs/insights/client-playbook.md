@@ -42,7 +42,12 @@ collibra-insights explore  snapshots/insights-<yesterday>
 ```
 `explore` prints every table with row counts and columns. Compare with [data-dictionary.md](data-dictionary.md); report any difference (a different Collibra version may add or rename columns).
 
-## 4. Measure the data quality of the export (10 min)
+## 4. Profile the catalogue and measure the export (10 min)
+
+```bash
+collibra-insights profile snapshots | tee profile.txt   # which capabilities are in use, how rich, how owned, how fresh
+```
+The *capabilities in use* section tells you which rows of the [approach](approach.md#3-decisions-a-gold-layer-can-support) apply to this client. Then measure the export itself:
 
 ```bash
 collibra-insights check        snapshots/insights-<yesterday>
