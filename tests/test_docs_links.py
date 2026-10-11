@@ -16,5 +16,5 @@ def test_relative_markdown_links_resolve():
             path = target.split("#")[0]
             if path and not (md.parent / path).exists():
                 broken.append(f"{md.relative_to(ROOT)} -> {target}")
-    assert len(FILES) == 8, [f.name for f in FILES]
+    assert len(FILES) == 9, [f.name for f in FILES]
     assert not broken, "\n".join(broken)
