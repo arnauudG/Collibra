@@ -4,6 +4,8 @@ Insights Data Access is a **nightly copy of a Collibra catalogue** (communities,
 
 This documentation is **instance-independent**: it explains Insights in general and shows how to apply it to any client. Numbers from the reference instance are labelled as examples.
 
+**Advising a client? Read [approach.md](approach.md) first**: one page on the feasible modeling and the decisions a gold layer can support.
+
 ## Read in this order
 
 | # | Document | Read it to… | Time |

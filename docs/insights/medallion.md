@@ -1,4 +1,6 @@
-# Insights in a medallion architecture
+# Insights in a medallion architecture (implementation notes)
+
+> **Optional.** The approach is in [approach.md](approach.md) and does not depend on this page. This page describes one way to deliver it, using the toolkit's `export` command.
 
 How to run Insights data through bronze → silver → gold so that gold tables serve reporting and data products. Platform-neutral: the toolkit hands over **Hive-partitioned Parquet**, which every lakehouse engine can register; choosing the engine is the client's call.
 
