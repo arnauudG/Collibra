@@ -50,6 +50,7 @@ def test_live_report_flags_differences(snap):  # noqa: F811
     assert "sum of excess in export: 1" in text
     assert "excludeMeta=false" in text and "id shape" not in text
     assert "not found as asset, domain or community" in text      # orphan domain id 'gone'
+    assert "derived (assumes" in text
     assert "WARNING" not in text
 
 

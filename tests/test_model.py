@@ -73,6 +73,7 @@ def test_dedupes_and_flags(snap):
     assert q("select community_name from dim_asset where asset_id='a1'") == [("Root",)]
     assert q("select value_as_text from fact_attribute order by attribute_id") == [("hello",), ("4.0",)]
     assert q("select is_month_end from dim_snapshot") == [(False,)]
+    assert q("select asset_resolution from fact_responsibility") == [("in_export",)]
 
 
 def test_pii_excluded_by_default(snap):

@@ -62,7 +62,7 @@ There is no standalone user table: users only appear inside `responsibility`, so
 
 ## 5. Checks run so far, and still open
 
-Verified on 2026-10-10: relation mirrored; complex_relation and community repeat ids; **14 assets reference a domain missing from the export** (kept in `dim_asset` with `is_domain_missing = true`; cause unknown). The 14 orphan assets are all type *Issue Category*, and the one domain without a community is of type *Issues Vocabulary Type*: the gaps cluster around Collibra's Issues content (possibly the docs' excluded-types rule; unverified). 5,027 responsibilities point at ids that are not an asset, domain or community (unexplained). Still open: `kind` → value column mapping, meaning of `community.level`.
+Verified on 2026-10-10: relation mirrored; complex_relation and community repeat ids; **14 assets reference a domain missing from the export** (kept in `dim_asset` with `is_domain_missing = true`; cause unknown). The 14 orphan assets are all type *Issue Category*, and the one domain without a community is of type *Issues Vocabulary Type*: the gaps cluster around Collibra's Issues content (possibly the docs' excluded-types rule; unverified). 5,027 responsibilities point at ids that are not exported (explained in §8, except 123 rows). Still open: `kind` → value column mapping, meaning of `community.level`.
 
 Reproduce:
 
@@ -85,22 +85,32 @@ These are aggregates only (no names or emails).
 ## 7. Conformance checks (`collibra-insights check <snapshot>`)
 
 1. No orphan assets (`asset.domain_id` ∈ `domain`), domains (`community_id` ∈ `community`).
-2. `attribute`, `relation`, `asset_tag` only reference existing `asset_id`s. `responsibility_missing_asset` is nonzero on the real snapshot (5,027 of 20,036) and **not** explained by domains or communities (checked: none of those ids match a domain or community). Treat it as an open data-quality question.
+2. `attribute`, `relation`, `asset_tag` only reference existing `asset_id`s. `responsibility_missing_asset` is nonzero on the real snapshot (5,027 of 20,036) and not domains or communities; mostly built-in "meta" assets the export omits (see §8). `fact_responsibility.asset_resolution` labels each row `in_export` / `not_in_export` / `no_asset_id`; filter on it instead of treating the rows as errors.
 3. Row counts within tolerance of the previous snapshot.
 4. Excluded types (Roles, Workflow Definitions) are absent.
 
 ## 8. What we know about gaps (export vs. live instance, 2026-10-10)
 
-Evidence from `collibra-insights investigate --live`. Confidence is stated per finding.
+Evidence: `collibra-insights investigate --live`. Collibra has **"meta" objects** that its list endpoints hide by default (`excludeMeta=false` reveals them; the parameter demonstrably changes the counts).
+
+| | Live (default) | Live incl. meta | Export | Hidden by default | In live-with-meta but not in export |
+|---|---|---|---|---|---|
+| Communities | 187 | 189 | 187 | 2 | 2 |
+| Domains | 398 | 590 | 585 | 192 | 5 |
+| Assets | 23,099 | 28,224 | 23,202 | 5,125 | 5,022 |
 
 | Finding | Evidence | Confidence |
 |---|---|---|
-| Export is a **superset** of what the REST list endpoints return | assets: export 23,202 vs live 23,099 (**+103** = 101 *Data Usage* + 2 *Data Issue*, types the live list reports as 0); domains: export 585 vs live 398 (**+187** = the 187 *Issues Vocabulary Type* domains); communities equal (187) | High for the counts. Why the live list hides them is **unverified** (a default filter such as hidden/meta is likely) |
-| Nothing visible in the live list is missing from the export (by count) | the +103 / +187 differences are fully explained by the hidden types above | Medium: equal totals do not prove identical members |
-| The 14 orphan assets sit in a built-in **Issue Classification** domain that exists live but is absent from the export's `domain` table; the 1 orphan domain sits in a community (id `00000000…`) that exists live but is absent from the export | live lookups of those ids succeed; the ids use the system-style `00000000-` prefix | High that they exist and are built-in; the exclusion rule itself is unverified |
-| 5,027 unresolved responsibilities are limited to **3 roles** (Community Manager 4,904, Data Quality Manager 122, Data Quality Viewer 1), and every row of those roles is unresolved | role breakdown | High |
-| Their ids are almost one per row (5,026 ids / 5,027 rows), so they are not shared resources | counts | High |
-| Some of them are `Role Type` assets, an excluded type per Collibra's docs | live lookup of the 8 *lowest* ids only | **Low**: biased sample. The spread sample in `investigate --live` is meant to settle it |
-| No Usage Analytics table | only `.parquet` files, 8 top-level folders | High that it is absent; cause unknown |
+| The export includes **some** meta objects: the 187 *Issues Vocabulary Type* domains, 101 *Data Usage* and 2 *Data Issue* assets | export minus live-default = 187 domains, 103 assets, exactly those types | High |
+| The export **omits other** meta objects: 2 communities, 5 domains, 5,022 assets | live-with-meta minus export | High arithmetic; assumes export ⊆ live-with-meta |
+| The 14 orphan assets and the 1 orphan domain sit under omitted built-in objects (Issue Classification domain, community id `00000000-…`) | live lookups of those ids succeed; ids use the system-style prefix | High |
+| 4,904 unresolved **Community Manager** responsibilities are held by **one user** and point at hidden meta assets (spread sample of 15: 13 *Assignment Characteristics*, 2 *Articulation Scores*) | `investigate --live` | Medium-high: sample of 15 of 4,904 |
+| The earlier "Role Type" lead was a **biased sample** (lowest ids); only 60 ids are system-style | id-shape query | High |
+| 122 **Data Quality Manager** (13 users) + 1 **Data Quality Viewer** rows point at ids that return 404 as asset, domain and community | 16 of 16 sampled | High that they are none of those three; **what they are is unknown** |
+| 47 responsibilities have no `asset_id`; likely global role assignments | many roles appear exactly once | Low (inferred) |
+| Why the export omits some meta objects but not others: consistent with the docs' rule that types not manageable through the Asset Type Operating Model are excluded | docs wording only | Unverified |
+| No Usage Analytics table | 8 folders, `.parquet` only | High that it is absent; cause unknown |
 
-Practical rule: **`LEFT JOIN` from facts to dimensions and keep unmatched rows**, since a few rows legitimately point at built-in objects the export omits.
+Note `is_domain_system` is **not** the same as meta: 194 exported domains are flagged system (187 Issues Vocabulary + 7 others), and the 7 others are visible in the default live list (391 non-system + 7 = 398).
+
+Practical rules: `LEFT JOIN` from facts to dimensions and keep unmatched rows; use `fact_responsibility.asset_resolution`; exclude `not_in_export` rows when analysing ownership of real assets.

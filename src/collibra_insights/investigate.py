@@ -151,11 +151,18 @@ def live_report(client: CollibraClient, snap: Snapshot) -> str:
     totals = {k: _total(client, f"/{k}") for k in snap_counts}
     out += [f"{k}: live {totals[k]} | export {snap_counts[k]}" for k in snap_counts]
     out.append("probe: same totals with excludeMeta=false (parameter name unverified; unchanged numbers mean it was ignored)")
+    with_meta: dict[str, int] = {}
     for k in snap_counts:
         try:
-            out.append(f"{k}: {_total(client, f'/{k}', excludeMeta='false')}")
+            with_meta[k] = _total(client, f"/{k}", excludeMeta="false")
+            out.append(f"{k}: {with_meta[k]}")
         except CollibraHTTPError as exc:
             out.append(f"{k}: HTTP {exc.status_code}")
+    if len(with_meta) == len(snap_counts):
+        out.append("derived (assumes the export is a subset of live-with-meta):")
+        for k in snap_counts:
+            out.append(f"{k}: hidden by default {with_meta[k] - totals[k]} | "
+                       f"in live-with-meta but not in export {with_meta[k] - snap_counts[k]}")
 
     samples = {
         "missing domain ids of orphan assets": _ids(

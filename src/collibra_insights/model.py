@@ -59,10 +59,14 @@ _VIEWS = [
                asset_id1, asset_type_id1, asset_type_name1,
                asset_id2, asset_type_id2, asset_type_name2, is_relation_generated
         FROM relation WHERE direction = 'head -> tail'"""),
+    # asset_resolution: ~25% of rows point at built-in "meta" objects the export omits; keep them, label them
     ("fact_responsibility", """
-        SELECT snapshot_date, role_id, role_name, asset_id, user_id, group_id, group_name,
-               is_responsibility_system, creation_date, edited_date
-        FROM responsibility"""),
+        SELECT r.snapshot_date, r.role_id, r.role_name, r.asset_id, r.user_id, r.group_id, r.group_name,
+               CASE WHEN r.asset_id IS NULL THEN 'no_asset_id'
+                    WHEN EXISTS (SELECT 1 FROM asset a WHERE a.snapshot_date = r.snapshot_date AND a.asset_id = r.asset_id)
+                         THEN 'in_export' ELSE 'not_in_export' END AS asset_resolution,
+               r.is_responsibility_system, r.creation_date, r.edited_date
+        FROM responsibility r"""),
     ("bridge_asset_tag", """
         SELECT snapshot_date, asset_id, tag_id, tag_name FROM asset_tag"""),
     # one row per participant of a complex relation (~2 per id observed)
