@@ -1,12 +1,12 @@
 from test_model import snap  # noqa: F401  (fixture: synthetic rows, real column names)
 
 from collibra_toolkit import CollibraNotFound
-from collibra_toolkit.insights.investigate import live_report, resolve_id, snapshot_report
+from collibra_toolkit.insights.investigate import live_report, probe_role, resolve_id, snapshot_report
 
 
 def test_snapshot_report_sections(snap, tmp_path):  # noqa: F811
     text = snapshot_report(snap)
-    for title in ("file layout", "attribute kind", "community.level", "responsibilities: overview", "shape of the ids", "is_system flags",
+    for title in ("file layout", "attribute kind", "community.level", "responsibilities: overview", "shape of the ids", "is_system flags", "domains with / without assets",
                   "unresolved responsibility ids", "assets whose domain is missing"):
         assert title in text
     assert ".parquet" in text
@@ -58,3 +58,21 @@ def test_live_report_warns_when_type_filter_ignored(snap):  # noqa: F811
     c = FakeLive({"/communities": {"total": 1}, "/domains": {"total": 1}, "/assets": {"total": 9}},
                  types=[{"id": f"t{i}", "name": f"T{i}"} for i in range(4)])
     assert "WARNING" in live_report(c, snap)
+
+
+def test_resolve_id_reports_the_domain_kind_of_an_asset():
+    c = FakeLive({"/assets/x": {"type": {"name": "Assignment Characteristics"}, "domain": {"id": "d9"}},
+                  "/assets/y": {"type": {"name": "T"}, "domain": {"id": "unknown"}}})
+    types = {"d9": "Issues Vocabulary Type"}
+    assert resolve_id(c, "x", types) == "asset (type Assignment Characteristics) in Issues Vocabulary Type domain"
+    assert resolve_id(c, "y", types) == "asset (type T) in a domain not in the export"
+    assert resolve_id(c, "x") == "asset (type Assignment Characteristics)"      # no domain context asked for
+
+
+def test_probe_role_reports_resource_types_and_keys():
+    items = [{"role": {"name": "Data Quality Manager"}, "baseResource": {"resourceType": "DataQualityJob"}}] * 3
+    c = FakeLive({"/responsibilities": {"results": items}})
+    out = probe_role(c, "role-id")
+    assert "DataQualityJob" in out and "3" in out and "baseResource" in out
+    assert c.calls[0][1]["roleIds"] == ["role-id"]
+    assert probe_role(FakeLive({"/responsibilities": {"results": []}}), "r") == "no results"

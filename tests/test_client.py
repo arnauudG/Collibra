@@ -100,3 +100,33 @@ def test_ping_reports_counts_only():
     out = ping(c)
     assert "total communities: 5" in out[2] and "got 5, unique ids 5" in out[3]
     assert "SECRET" not in "\n".join(out)
+
+
+def test_toolkit_cli_ping_and_error_messages(monkeypatch, capsys):
+    from collibra_toolkit.cli import main
+
+    items = [{"id": f"id{i}"} for i in range(5)]
+    pages = [FakeResp(payload={"results": items[i:i + 2], "total": 5, "limit": 2}) for i in (0, 0, 2, 4)]
+    client, _ = make(*pages)
+    monkeypatch.setattr(CollibraClient, "from_env", classmethod(lambda cls, *a, **k: client))
+    main(["ping"])
+    assert "reachable: yes" in capsys.readouterr().out
+
+    denied, _ = make(FakeResp(401, b"nope"))
+    monkeypatch.setattr(CollibraClient, "from_env", classmethod(lambda cls, *a, **k: denied))
+    with pytest.raises(SystemExit) as info:
+        main(["ping"])
+    assert "HTTP 401" in str(info.value) and "COLLIBRA_USER" in str(info.value)
+
+
+def test_toolkit_cli_delegates_to_initiatives(tmp_path, capsys):
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    from collibra_toolkit.cli import main
+
+    d = tmp_path / "asset"
+    d.mkdir()
+    pq.write_table(pa.table({"id": [1, 2]}), d / "p.parquet")
+    main(["insights", "query", str(tmp_path), "select count(*) as n from asset"])
+    assert capsys.readouterr().out.splitlines() == ["n", "2"]

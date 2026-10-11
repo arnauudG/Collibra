@@ -1,94 +1,72 @@
 # Modelling Insights data
 
-> **Status:** columns are **observed** from a real snapshot (2026-10-10, a training instance); the full column list is in [data-dictionary.md](data-dictionary.md). Behaviour marked *verified* was checked with queries on real data. Worked examples: [cookbook.md](cookbook.md).
+The raw tables mirror Collibra's operating model: flexible, but awkward for reporting. This guide explains the shape we recommend and why. Column details: [data-dictionary.md](data-dictionary.md). Worked questions: [cookbook.md](cookbook.md).
 
-## 1. What a snapshot contains (observed)
+## 1. Why model at all?
 
-Eight tables. Every table has `snapshot_date` (DATE) plus `snapshot_date_year/month/day` (the Hive partition columns), `creator_*` / `editor_*` audit columns, and VARCHAR ids. No Usage Analytics table was present in this snapshot (reason unknown).
+Four properties of the raw tables make naive queries wrong:
 
-| Table | Rows | Key columns |
+| Raw table | Quirk | What goes wrong |
 |---|---|---|
-| `community` | 357 | `community_id`, `community_name`, `parent_community_id`, `level`, `level_community_id/name/uri` |
-| `domain` | 585 | `domain_id`, `domain_name`, `domain_type_id/name`, `community_id` |
-| `asset` | 23,202 | `asset_id`, `asset_full_name`, `asset_display_name`, `domain_id`, `asset_type_id/name`, `status_id/name`, `articulation`, `ratings_average/count` |
-| `asset_tag` | 147 | `tag_id`, `asset_id`, `tag_name` |
-| `attribute` | 116,935 | `attribute_id`, `asset_id`, `asset_type_name`, `attribute_type_id/name`, `kind`, value columns (below), `complex_relation_id` |
-| `relation` | 54,720 | `relation_id`, `relation_type_id`, `role_or_corole`, `direction`, `asset_id1/2`, `asset_type_id1/2`, `asset_type_name1/2`, `is_relation_generated` |
-| `complex_relation` | 9,710 | `complex_relation_id`, `complex_relation_type_id/name`, `relation_type_id`, `relation_role`, `asset_id` |
-| `responsibility` | 20,036 | `role_id`, `role_name`, `asset_id`, `user_id`, `username`, `user_*` (name, email, licence, flags), `group_id`, `group_name` |
+| `relation` | each link stored **twice** (head→tail and tail→head) | every count doubles |
+| `community` | one row per **ancestor level** | communities repeat |
+| `attribute` | one row per value for **every** attribute type (EAV) | you cannot see "a term with its definition" without pivoting |
+| `responsibility` | resource may be missing from the export, may be null (global), may point at non-catalog resources | joins silently drop rows |
 
-Full column lists: run `collibra-insights explore <snapshot>`.
+## 2. Target: a small star schema
 
-## 2. How the tables join
-
-```
-community ──< domain ──< asset ──< attribute          (asset_id)
- (community_id)  (domain_id)  │ ──< asset_tag         (asset_id)
-                              │ ──< responsibility    (asset_id; user_id or group_id)
-                              ├──  relation           (asset_id1 ↔ asset_id2)
-                              └──< complex_relation   (asset_id, per participant)
-attribute.complex_relation_id ──> complex_relation    (attributes that sit on a complex relation)
-```
-
-Names are already denormalised in places (`asset_type_name` in `attribute` and `relation`, `domain_type_name` in `domain`), which saves joins.
-
-## 3. Target: a small star schema
-
-| Layer | Table | Grain | Built from |
+| Layer | View | One row per… | Built from |
 |---|---|---|---|
-| Dim | `dim_community` | community | `community` (see hierarchy note) |
-| Dim | `dim_domain` | domain, with its community | `domain` ⨝ `community` |
-| Dim | `dim_asset` | asset, with domain / community / type / status | `asset` ⨝ `dim_domain` |
-| Dim | `dim_user` | user (derived) | distinct user columns of `responsibility` |
-| Dim | `dim_date` | day | generated |
-| Fact | `fact_attribute` | attribute instance × snapshot | `attribute` |
-| Fact | `fact_relation` | relation × snapshot | `relation` |
-| Fact | `fact_responsibility` | asset × role × user/group × snapshot | `responsibility` |
+| Dim | `dim_community` | community (`depth`, `is_root`) | `community` |
+| Dim | `dim_domain` | domain, with its community | `domain` ⨝ `dim_community` |
+| Dim | `dim_asset` | asset, with domain / community; `is_domain_missing` | `asset` ⟕ `dim_domain` |
+| Dim | `dim_user` | user (derived: there is no user table) | `responsibility` |
+| Dim | `dim_snapshot` | snapshot date (`is_month_end`) | `asset` |
+| Fact | `fact_attribute` | attribute value (`value_as_text` always filled when any value exists) | `attribute` |
+| Fact | `fact_relation` | relationship (one direction kept) | `relation` |
+| Fact | `fact_responsibility` | responsibility, with `asset_resolution` | `responsibility` |
+| Fact | `fact_view_event` | page view (**only if `view_events` exists**) | `view_events` |
+| Bridge | `bridge_community_ancestor` | community × ancestor level | `community` |
 | Bridge | `bridge_asset_tag` | asset × tag | `asset_tag` |
+| Bridge | `bridge_complex_relation` | complex relation × leg | `complex_relation` |
 
-There is no standalone user table: users only appear inside `responsibility`, so `dim_user` has to be derived. Those columns include names and emails; decide up front whether to keep or hash them.
+Why a star? "How many Business Terms per domain, owned by whom, with or without a definition?" becomes one fact joined to a few small dimensions.
 
-## 4. Decisions that matter
+## 3. Decisions that matter
 
-**a) Snapshots are the time axis.** Keep `snapshot_date` on every fact and join to `dim_date`. Loading month-end snapshots gives trends cheaply; daily gives detail for the last 31 days.
+**a) Snapshots are the time axis.** Keep `snapshot_date` on every view and join on `(snapshot_date, id)` (Collibra's own rule). Loading month-end snapshots gives cheap trends; daily snapshots give detail for the last 31 days.
 
-**b) Attributes are typed EAV (verified).** One row per attribute. `expression_long` holds a text rendering for essentially every kind; the typed column adds the real value: NUMERIC → `numeric_value`, BOOLEAN → `boolean_value`, DATE → `datetime_value`. STRING, SINGLE/MULTI_VALUE_LIST and SCRIPT use `expression_long` only (counts on 2026-10-10: STRING 69,313; NUMERIC 24,579; BOOLEAN 19,880; MULTI_VALUE_LIST 1,603; SINGLE_VALUE_LIST 1,275; DATE 284; SCRIPT 1). A few rows have a typed value but no text (56 NUMERIC) or an empty text (34 STRING), so `fact_attribute.value_as_text` coalesces all four columns. Keep `fact_attribute` long, and pivot only chosen attribute types into wide marts per asset type. *Not yet checked:* how multi-value lists are encoded inside `expression_long`.
+**b) Keep attributes long; pivot per asset type.** `expression_long` holds a text rendering of almost every value; `numeric_value`, `boolean_value`, `datetime_value` hold the typed value for NUMERIC, BOOLEAN and DATE kinds. Compute with the typed column, display the text. A global pivot is unstable because custom attribute types differ per environment, so build wide marts only for the asset types you care about (e.g. `mart_business_term`: definition, status, owner).
 
-**c) Every relation is stored twice (verified).** In the 2026-10-10 snapshot each `relation_id` has exactly two rows, `direction = 'head -> tail'` and `'tail -> head'` (27,360 ids, 54,720 rows). So `count(*)` over `relation` doubles everything. Build `fact_relation` with **one row per `relation_id`** by keeping `direction = 'head -> tail'`, and expose the reverse reading as a view if needed. The two rows are exact mirrors (`asset_id1`/`asset_id2` swapped): 27,360 of 27,360 verified.
+**c) Keep one direction of each relation.** `fact_relation` filters `direction = 'head -> tail'`. Both ends are still reachable by testing `asset_id1` **or** `asset_id2`.
 
-**d) Complex relations are one row per participant** (`relation_role` + `asset_id` under a `complex_relation_id`; 9,710 rows / 4,823 ids, about 2 each). Model as a bridge keyed by `complex_relation_id`.
+**d) Community hierarchy.** Official tip: `community_id = level_community_id` isolates unique communities. `dim_community` does this, and `bridge_community_ancestor` keeps the full path (level 1 = top, last level = the community itself).
 
-**e) Community hierarchy is a root-to-self path per community (verified).** A community at depth *d* has exactly *d* rows, `level` 1..*d*, where `level_community_id` is the ancestor at that level and level *d* is the community itself (187 of 187 communities satisfy this; 62 roots; deepest = 4). `dim_community` therefore has one row per community with `depth` and `is_root`, and `bridge_community_ancestor` lists every ancestor. The `community_parent_mismatch` check tests that level *d−1* equals `parent_community_id`.
+**e) Never drop unmatched rows.** `LEFT JOIN` from facts to dimensions. Rows pointing at hidden built-in objects or at non-catalog resources are normal; `is_domain_missing` and `asset_resolution` label them rather than hiding them.
 
-## 5. Checks run so far, and still open
+**f) Responsibilities need care.** Interpret with the rules in [known-gaps.md](known-gaps.md): asset-level and domain-inherited ownership are present, community-inherited is not, null means global. Use `asset_resolution = 'in_export'` for "who owns what".
 
-Verified on 2026-10-10: relation mirrored; complex_relation and community repeat ids; **14 assets reference a domain missing from the export** (kept in `dim_asset` with `is_domain_missing = true`; cause unknown). The 14 orphan assets are all type *Issue Category*, and the one domain without a community is of type *Issues Vocabulary Type*: the gaps cluster around Collibra's Issues content (possibly the docs' excluded-types rule; unverified). 5,027 responsibilities point at ids that are not exported (explained in §8, except 123 rows). Still open: `kind` → value column mapping, meaning of `community.level`.
+**g) Privacy.** `responsibility` and `view_events` hold personal data (names, emails, usernames, sessions). `dim_user` omits names and email unless you ask (`build_model(snapshot, include_pii=True)`).
 
-Reproduce:
+## 4. The model in code
 
-```bash
-S=snapshots/insights-2026-10-10
-collibra-insights query $S "select direction, count(*) from relation group by 1"
-collibra-insights query $S "select count(*) rows_, count(distinct relation_id) ids from relation"   # verified: 54720 / 27360
-collibra-insights query $S "select count(*) mirrored from relation a join relation b on a.relation_id=b.relation_id and a.direction='head -> tail' and b.direction='tail -> head' and a.asset_id1=b.asset_id2 and a.asset_id2=b.asset_id1"   # expect 27360
-collibra-insights query $S "select count(*) rows_, count(distinct complex_relation_id) ids from complex_relation"
-collibra-insights query $S "select count(*) rows_, count(distinct community_id) ids from community"
-collibra-insights query $S "select kind, count(*) from attribute group by 1 order by 2 desc"
-collibra-insights query $S "select count(*) orphans from asset a left join domain d using(domain_id) where d.domain_id is null"
+```python
+from collibra_toolkit.insights import Snapshot, build_model, check_model
+snap = Snapshot("snapshots/insights-2026-10-10")   # or a parent folder holding several snapshots
+build_model(snap)                                   # creates the views above
+snap.sql("select asset_type_name, count(*) from dim_asset group by 1").fetchall()
 ```
-These are aggregates only (no names or emails).
+CLI: `collibra-insights query <path> --model --file q.sql`.
 
-## 6. The model in code
+## 5. Conformance checks (`collibra-insights check <snapshot>`)
 
-`collibra_insights.model.build_model(snapshot)` creates `dim_community`, `dim_domain`, `dim_asset`, `dim_user`, `dim_snapshot`, `fact_attribute`, `fact_relation`, `fact_responsibility`, `bridge_asset_tag`, `bridge_complex_relation`. `dim_user` omits first name, last name and email unless `include_pii=True`. CLI: `collibra-insights query <snapshot> "select ..." --model`.
+| Check | Expect |
+|---|---|
+| `asset_missing_domain`, `domain_missing_community` | usually small, non-zero: hidden built-in parents |
+| `attribute_missing_asset`, `asset_tag_missing_asset`, `relation_missing_asset` | 0 |
+| `responsibility_missing_asset` | non-zero is normal: Data Quality resources, meta assets |
+| `relation_ids_not_stored_twice` | 0 |
+| `dim_asset_duplicate_keys`, `dim_community_duplicate_keys` | 0 |
+| `community_parent_mismatch` | 0 (the second-deepest level equals `parent_community_id`) |
 
-## 7. Conformance checks (`collibra-insights check <snapshot>`)
-
-1. No orphan assets (`asset.domain_id` ∈ `domain`), domains (`community_id` ∈ `community`).
-2. `attribute`, `relation`, `asset_tag` only reference existing `asset_id`s. `responsibility_missing_asset` is nonzero on the real snapshot (5,027 of 20,036) and not domains or communities; mostly built-in "meta" assets the export omits (see §8). `fact_responsibility.asset_resolution` labels each row `in_export` / `not_in_export` / `no_asset_id`; filter on it instead of treating the rows as errors.
-3. Row counts within tolerance of the previous snapshot.
-4. Excluded types (Roles, Workflow Definitions) are absent.
-
-## 8. Gaps between the export and the live instance
-
-Moved to its own page for readers who only need the caveats: see [known-gaps.md](known-gaps.md).
+Anything unexpected is worth a look with `collibra-insights investigate`.

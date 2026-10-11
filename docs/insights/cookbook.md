@@ -1,10 +1,10 @@
 # Cookbook: questions you can answer with Insights
 
-Each recipe is a business question, a query on the [model](data-modeling.md), and the traps to avoid. Every query in this file is executed by the test suite against a fixture, so none should fail on a bind or syntax error. They have **not** all been run on real data, so sanity-check numbers before presenting them.
+Each recipe is a business question, a query on the [model](modeling.md), and the traps to avoid. Every query in this file is executed by the test suite against a fixture, so none should fail on a bind or syntax error. They have **not** all been run on real data, so sanity-check numbers before presenting them.
 
 ## How to run a recipe
 
-1. Download a snapshot: `collibra-insights download 2026-10-10`
+1. Download a snapshot: `collibra-insights download 2026-10-10` (first time at a client? follow the [playbook](client-playbook.md))
 2. Put the SQL in a file (say `q.sql`) and run:
    ```bash
    collibra-insights query snapshots/insights-2026-10-10 --model --file q.sql
@@ -106,7 +106,7 @@ WHERE a.asset_type_name = 'Business Term'
 GROUP BY 1
 ORDER BY 2 DESC
 ```
-*Watch out:* only **explicit asset-level** responsibilities are in the export. If you assign owners at domain or community level, this **overstates** the gap. Role names are matched by text (`'Owner'`); list yours with `SELECT DISTINCT role_name FROM fact_responsibility`.
+*Watch out:* the export includes asset-level responsibilities and those **inherited from domains**, but **not those inherited from communities**. If owners are assigned at community level, this **overstates** the gap. Role names are matched by text (`'Owner'`); list yours with `SELECT DISTINCT role_name FROM fact_responsibility`.
 
 ### 7. Stale content: not edited for a year
 ```sql
@@ -249,6 +249,47 @@ FROM fact_attribute
 GROUP BY 1, 2
 ORDER BY 3 DESC
 ```
+
+---
+
+## Usage Analytics (needs the optional `view_events` table)
+
+These recipes only run if your snapshots contain `view_events` (check with `collibra-insights tables-available`). Only **user-interface** events are counted, usernames are personal data, and `snapshot_date` in this table is the day the event happened. The columns come from Collibra's documentation; they were not available on the reference instance to verify.
+
+### 19. How many people use Collibra each day?
+```sql
+SELECT snapshot_date AS day, count(DISTINCT user_id) AS active_users, count(*) AS views
+FROM fact_view_event
+GROUP BY 1
+ORDER BY 1
+```
+
+### 20. Which assets are viewed most?
+```sql
+SELECT a.asset_display_name, a.asset_type_name,
+       count(*) AS views, count(DISTINCT v.user_id) AS viewers
+FROM fact_view_event v
+JOIN dim_asset a
+  ON a.asset_id = CAST(v.asset_id AS VARCHAR)
+ AND a.snapshot_date = (SELECT max(snapshot_date) FROM dim_snapshot)
+GROUP BY 1, 2
+ORDER BY 3 DESC
+LIMIT 20
+```
+*Reads as:* the content people actually read. Events on diagrams, dashboards or pages other than assets have no `asset_id` and are not counted here.
+
+### 21. Which content is never viewed?
+```sql
+SELECT a.asset_type_name, count(*) AS never_viewed
+FROM dim_asset a
+WHERE a.snapshot_date = (SELECT max(snapshot_date) FROM dim_snapshot)
+  AND NOT EXISTS (
+      SELECT 1 FROM fact_view_event v
+      WHERE CAST(v.asset_id AS VARCHAR) = a.asset_id)
+GROUP BY 1
+ORDER BY 2 DESC
+```
+*Watch out:* "never viewed" covers only the period the events span; API and Edge access is invisible.
 
 ---
 

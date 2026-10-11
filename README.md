@@ -1,67 +1,60 @@
-# collibra-insights
+# collibra-toolkit
 
-A small Python package to **download Collibra Insights Data Access snapshots** and **explore them locally** with DuckDB.
+Reusable Python tooling for Collibra: a **generic REST client** that any initiative can build on, and, so far, one initiative package, **Insights Data Access** (download nightly snapshots, explore them locally with DuckDB, model them as a star schema, answer questions with SQL).
 
-**Documentation for colleagues starts at [`docs/README.md`](docs/README.md)**: overview, data dictionary, known gaps, modeling guide and a tested SQL cookbook.
+* Toolkit documentation: [`docs/README.md`](docs/README.md)
+* Insights documentation (start here for colleagues): [`docs/insights/README.md`](docs/insights/README.md), including a step-by-step [client playbook](docs/insights/client-playbook.md)
 
-## Quick start
+## Install
 
 ```bash
-python -m venv .venv && . .venv/bin/activate
+python3 -m venv ~/.venvs/collibra && . ~/.venvs/collibra/bin/activate    # keep the venv outside iCloud-synced folders
 pip install -e ".[dev]"
-
-export COLLIBRA_URL=https://<your-env>.collibra.com
-export COLLIBRA_USER=...  COLLIBRA_PASSWORD=...     # or COLLIBRA_TOKEN=...
-
-collibra-insights download 2026-10-10                # -> snapshots/insights-2026-10-10/
-collibra-insights explore snapshots/insights-2026-10-10
-collibra-insights query snapshots/insights-2026-10-10 "select count(*) from asset"
-collibra-insights query snapshots/insights-2026-10-10 --model --file q.sql          # multi-line SQL; --model adds dim_/fact_ views
-# point at a parent folder holding several snapshots to get history (snapshot_date tells them apart)
-collibra-insights check snapshots/insights-2026-10-10   # build the model + conformance report
-collibra-insights ping                                  # live check: credentials + pagination
 ```
 
-```python
-from collibra_insights import Snapshot
-s = Snapshot("snapshots/insights-2026-10-10")
-print(s.report())                       # every table, row count, columns + types
-s.sql("select count(*) from asset").fetchall()
+## Use
+
+```bash
+export COLLIBRA_URL=https://<your-env>.collibra.com COLLIBRA_USER=<user>
+read -s COLLIBRA_PASSWORD     # on its own line; type, Enter
+export COLLIBRA_PASSWORD
+
+collibra-toolkit ping                                  # generic: credentials + pagination
+collibra-insights tables-available 2026-10-10 --endpoint both
+collibra-insights download 2026-10-10                  # -> snapshots/insights-2026-10-10/
+collibra-insights explore  snapshots/insights-2026-10-10
+collibra-insights check    snapshots/insights-2026-10-10
+collibra-insights investigate snapshots/insights-2026-10-10 --live
+collibra-insights query    snapshots/insights-2026-10-10 --model --file q.sql
 ```
-
-## Layers
-
-Each layer works alone and builds on the one above it:
-
-| Module | Responsibility | Knows about Insights? |
-|---|---|---|
-| `client.CollibraClient` | auth, requests, typed errors, `paginate` | no |
-| `insights.InsightsClient(client)` | snapshot download, retention check, safe extraction | yes |
-| `explore.Snapshot(path)` | local DuckDB views over a snapshot folder; **no network** | yes |
-| `model.build_model(snapshot)` | star-schema views, `check_model` | yes |
+(`collibra-toolkit insights …` is the same as `collibra-insights …`. Point `explore`/`query` at a parent folder to load several snapshots at once.)
 
 ```python
-from collibra_insights import CollibraClient, InsightsClient
+from collibra_toolkit import CollibraClient
+from collibra_toolkit.insights import InsightsClient, Snapshot, build_model
 
-client = CollibraClient.from_env()                  # reusable for any REST 2.0 endpoint
-for community in client.paginate("/communities"):   # pagination verified live on this endpoint
-    ...
+client = CollibraClient.from_env()                       # generic, reusable
 folder = InsightsClient(client).download_snapshot("2026-10-10", "snapshots")
+snap = Snapshot(folder); build_model(snap)
+snap.sql("select asset_type_name, count(*) from dim_asset group by 1").fetchall()
+```
+
+## Layout
+
+```
+src/collibra_toolkit/        generic client, errors, pagination, health check, CLI plumbing
+src/collibra_toolkit/insights/   Insights initiative (own client, explorer, model, diagnostics, CLI)
+tests/  tests/insights/      tests (fake HTTP, synthetic Parquet with real column names)
+docs/   docs/insights/       documentation
 ```
 
 ## Status (honest)
 
 | Piece | State |
 |---|---|
-| Generic client (auth, typed errors, pagination) | Implemented, tested against **fake** HTTP. `paginate` verified live on `/communities` only (envelope and multi-page walk as assumed); other endpoints untested |
-| Insights download, safe unzip, DuckDB views, schema discovery | Implemented, unit-tested against **fake** HTTP and **synthetic** Parquet |
-| Run against a real Collibra environment | **Done once** (training instance, snapshot 2026-10-10): download + explore of all 8 tables worked |
-| Column-level schema | Observed and documented in `docs/data-modeling.md`; still **discovered at runtime**, not hardcoded |
-| Table grain, relation direction, community repeats | **Verified** on the real snapshot. Still open: `attribute.kind` → value column mapping, meaning of `community.level` (`docs/data-modeling.md` §5) |
-| Star-schema views + `check` | Implemented (`model.py`), tested on **synthetic** data with real column names; not yet run on the real snapshot |
+| Generic client: auth, typed errors, pagination | Verified live on one instance (basic auth, `/communities`) ; token auth untested |
+| Insights download, extraction, explorer, model, checks | Verified live on one instance; unit-tested with fake HTTP and synthetic data |
+| `view_events` / `fact_view_event` / Usage Analytics recipes | Built from Collibra's documentation; **no real data available to verify** |
+| Cookbook SQL | Every query is executed by the tests against a fixture; not all run on real data |
 
-Requires Collibra Platform 5.7+ and a Collibra Insights licence. Snapshots may contain sensitive governance data and are git-ignored.
-
-## Investigating the export
-
-`collibra-insights investigate <snapshot>` prints aggregate evidence on open questions (file layout, attribute `kind` mapping, `community.level`, Issue-related orphans, unresolved responsibilities). Add `--live` to compare against the REST API of the same instance (totals, per-type counts, and what unresolved ids actually are). Output contains counts, type names and id prefixes only. Findings are recorded in `docs/data-modeling.md`.
+Requires Collibra Platform 5.7+ and an Insights licence. Snapshots contain sensitive data and are git-ignored.

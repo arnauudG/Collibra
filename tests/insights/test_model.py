@@ -57,6 +57,11 @@ def snap(tmp_path):
         user_lastname="Doe", user_email="j@x.com", user_language="en", user_licensetype="AUTHOR",
         is_user_guest=False, is_user_api=False, is_user_activated=True, is_user_enabled=True,
         is_responsibility_system=False, group_id=None, group_name=None, creation_date=None, edited_date=None)])
+    _write(tmp_path, "view_events", [dict(
+        event_id="e1", user_id="u1", username="jdoe", event_time=dt.datetime(2026, 10, 10, 9, 0), session_id="s1",
+        asset_id="a1", asset_full_name="f", asset_display_name="n", domain_id="d1", domain_name="Dom",
+        community_id="c1", community_name="Root", diagram_id=None, diagram_name=None, dashboard_id=None,
+        dashboard_name=None, view_id=None, view_name=None, page_parameters=None, page_path="/asset/a1", tab_name="Overview")])
     return Snapshot(tmp_path)
 
 
@@ -96,3 +101,16 @@ def test_missing_table_is_a_clear_error(tmp_path):
     _write(tmp_path, "asset", [dict(asset_id="a")])
     with pytest.raises(ValueError, match="lacks tables"):
         build_model(Snapshot(tmp_path))
+
+
+def test_view_events_become_a_fact_only_when_present(snap, tmp_path_factory):
+    assert "fact_view_event" in build_model(snap)
+    assert snap.sql("select count(*) from fact_view_event").fetchone() == (1,)
+    # a snapshot without the optional table still builds, and has no such view
+    root = tmp_path_factory.mktemp("noviews")
+    for src in snap.path.iterdir():
+        if src.name != "view_events":
+            import shutil
+            shutil.copytree(src, root / src.name)
+    no_views = Snapshot(root)
+    assert "fact_view_event" not in build_model(no_views)

@@ -1,49 +1,51 @@
 # Collibra Insights Data Access: documentation
 
-Insights Data Access is a **nightly copy of your Collibra catalogue** (communities, domains, assets, attributes, relations, responsibilities) that you download as Parquet files and analyse with SQL. Think of it as a daily photograph of your catalogue: great for reporting and history, not live.
+Insights Data Access is a **nightly copy of a Collibra catalogue** (communities, domains, assets, attributes, relations, responsibilities, optionally Usage Analytics events) that you download as Parquet files and analyse with SQL. Think of it as a daily photograph of the catalogue: great for reporting and history, not live.
+
+This documentation is **instance-independent**: it explains Insights in general and shows how to apply it to any client. Numbers from the reference instance are labelled as examples.
 
 ## Read in this order
 
 | # | Document | Read it to… | Time |
 |---|---|---|---|
-| 1 | [Overview](insights-data-access.md) | understand what it is, how data is delivered, retention | 5 min |
-| 2 | [Data dictionary](data-dictionary.md) | know every table and column, how they join, what a row means | 15 min |
-| 3 | [Known gaps](known-gaps.md) | avoid wrong totals: what the export omits and why numbers differ from the UI | 5 min |
-| 4 | [Modeling guide](data-modeling.md) | understand the star schema built on top, and why | 10 min |
-| 5 | [Cookbook](cookbook.md) | answer real questions with copy-paste SQL | as needed |
+| 1 | [Overview](overview.md) | understand what it is, delivery, retention | 5 min |
+| 2 | [Data dictionary](data-dictionary.md) | know every table and column, keys, how they join | 15 min |
+| 3 | [Known gaps](known-gaps.md) | avoid wrong totals: what the export omits and why | 10 min |
+| 4 | [Modeling guide](modeling.md) | understand the star schema and why | 10 min |
+| 5 | [Cookbook](cookbook.md) | answer real questions with tested SQL | as needed |
+| ★ | [Client playbook](client-playbook.md) | apply all of this at a new client, step by step | 1 hour |
 
-**Just want an answer?** Jump to the [cookbook](cookbook.md), but read the "Watch out" notes.
+**Just want an answer?** Jump to the [cookbook](cookbook.md), but read each "Watch out".
 
 ## Five things to remember
 
-1. **A snapshot is yesterday's photo**, taken nightly in UTC. Every table has a `snapshot_date`.
-2. **Raw tables are not analysis-ready.** `relation` stores every link twice; `community` repeats a row per hierarchy level; `attribute` is one long list of every value. Count on the **model** (`dim_*`, `fact_*`), not the raw tables.
+1. **A snapshot is yesterday's photo**, taken nightly in UTC. Every table has a `snapshot_date`, and every join must include it.
+2. **Raw tables are not analysis-ready.** `relation` stores each link twice, `community` repeats a row per level, `attribute` is one long list. Count on the **model** (`dim_*`, `fact_*`).
 3. **Join on ids, never names.**
-4. **The export is not identical to the UI.** Some built-in "meta" objects are included, others omitted ([known gaps](known-gaps.md)). Keep unmatched rows (`LEFT JOIN`) instead of dropping them.
-5. **Responsibilities contain personal data** (names, emails). The model hides them unless you ask.
+4. **The export is not identical to the UI.** Hidden built-in "meta" objects are partly included, partly omitted; some responsibilities point at non-catalog resources. Keep unmatched rows (`LEFT JOIN`).
+5. **Responsibilities and view events contain personal data.** The model hides names and emails unless asked.
 
 ## Glossary
 
 | Term | Meaning |
 |---|---|
 | Snapshot | One day's copy of the data, delivered as a ZIP of Parquet files |
-| Grain | What one row of a table represents (e.g. "one asset", "one relation per direction") |
+| Grain | What one row of a table represents |
 | Dimension (`dim_*`) | A table of things you group by: assets, domains, communities, users |
-| Fact (`fact_*`) | A table of events or measurements you count: attribute values, relations, responsibilities |
-| EAV | Entity-attribute-value: one generic table holds every attribute of every asset, so it must be pivoted for reporting |
+| Fact (`fact_*`) | A table of events or measurements you count |
+| EAV | Entity-attribute-value: one generic table holds every attribute of every asset |
 | Meta object | A built-in Collibra helper object hidden from the normal API list; partly present in the export |
+| Resource role | A role (Owner, Data Quality Manager…) that applies to a resource and its children through a responsibility |
 | Orphan | A row whose parent id does not exist in the exported tables |
 
-## Getting started
+## Commands
 
 ```bash
-pip install -e ".[dev]"
-export COLLIBRA_URL=https://<your-env>.collibra.com COLLIBRA_USER=<you>
-read -s COLLIBRA_PASSWORD       # type it, press Enter (nothing is shown)
-export COLLIBRA_PASSWORD
-collibra-insights download 2026-10-10           # yesterday or a recent date
-collibra-insights explore snapshots/insights-2026-10-10   # tables and columns
-collibra-insights check snapshots/insights-2026-10-10     # data-quality report
+collibra-insights ping                              # credentials and pagination
+collibra-insights tables-available <dates> --endpoint both
+collibra-insights download <date>
+collibra-insights explore  <snapshot>
+collibra-insights check    <snapshot>
+collibra-insights investigate <snapshot> [--live]
+collibra-insights query    <snapshot> --model --file q.sql
 ```
-
-Prerequisites: Collibra Platform 5.7+ and an Insights licence.

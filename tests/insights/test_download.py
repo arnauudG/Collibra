@@ -71,3 +71,23 @@ def test_download_is_atomic_and_clean(tmp_path):
     assert (out / "asset" / "new.parquet").exists()  # earlier good extraction survives
     assert not list(tmp_path.glob("*.zip")) and not list(tmp_path.glob("*.part"))
     assert not list(tmp_path.glob(".insights-*"))
+
+
+def test_legacy_endpoint_and_unknown_endpoint(tmp_path):
+    day = dt.date.today().isoformat()
+    ic, sess = insights(FakeResp(200, zip_bytes({"asset/x.parquet": b"x"})))
+    ic.download_snapshot(day, tmp_path, endpoint="legacy")
+    assert sess.calls[0][1].endswith("/rest/2.0/reporting/insights/download")
+    with pytest.raises(CollibraError, match="endpoint"):
+        ic.download_snapshot(day, tmp_path, endpoint="nope")
+
+
+def test_list_tables_reads_the_zip_without_extracting(tmp_path):
+    day = dt.date.today().isoformat()
+    part = "snapshot_date_year=2026/snapshot_date_month=10/snapshot_date_day=10/p.parquet"
+    z = zip_bytes({f"wrapper/asset/{part}": b"x", f"wrapper/view_events/{part}": b"x", "wrapper/notes.txt": b"hi"})
+    assert insights(FakeResp(200, z))[0].list_tables(day) == ["asset", "view_events"]
+    flat = zip_bytes({"asset/p.parquet": b"x", "domain/p.parquet": b"x"})
+    assert insights(FakeResp(200, flat))[0].list_tables(day) == ["asset", "domain"]
+    with pytest.raises(CollibraError, match="valid ZIP"):
+        insights(FakeResp(200, b"not a zip"))[0].list_tables(day)

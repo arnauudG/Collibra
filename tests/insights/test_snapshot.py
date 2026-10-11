@@ -78,3 +78,23 @@ def test_cli_reports_errors_in_one_line(monkeypatch):
     with pytest.raises(SystemExit) as info:
         main(["ping"])
     assert "COLLIBRA_URL is not set" in str(info.value)
+
+
+def test_core_vs_optional_tables(tmp_path):
+    from collibra_toolkit.insights import CORE_TABLES
+
+    for name in CORE_TABLES:
+        d = tmp_path / name
+        d.mkdir()
+        pq.write_table(pa.table({"id": [1]}), d / "p.parquet")
+    s = Snapshot(tmp_path)
+    assert s.missing() == [] and s.optional_absent() == ["view_events"]
+    assert s.undocumented() == []
+
+
+def test_table_name_rules():
+    from collibra_toolkit.insights.tables import table_name
+
+    assert table_name(("w", "asset", "snapshot_date_year=2026", "snapshot_date_day=10")) == "asset"
+    assert table_name(("w", "asset")) == "asset"          # flat layout
+    assert table_name(("snapshot_date_year=2026",)) is None

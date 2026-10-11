@@ -1,4 +1,4 @@
-"""Star-schema views over a Snapshot. See docs/data-modeling.md for the reasoning.
+"""Star-schema views over a Snapshot. See docs/insights/modeling.md for the reasoning.
 
 Every view keeps ``snapshot_date`` so several snapshots can be loaded side by side;
 joins therefore always match on (snapshot_date, id).

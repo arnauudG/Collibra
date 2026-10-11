@@ -1,6 +1,6 @@
 # Data dictionary: what is inside an Insights snapshot
 
-Observed on a real snapshot (2026-10-10). Types are as read from the Parquet files. Statements are marked **verified** (checked with a query on real data), **inferred** (from names and counts, not proven) or **unknown**.
+Sources: Collibra's official *Entity relationship diagram* and *Insights tables* pages, **checked against a real snapshot** from a reference instance. Where the two differ or where something was verified, it is said. Types are simplified (text, number, date…); the real files use DuckDB/Parquet types.
 
 ## How the tables connect
 
@@ -10,130 +10,147 @@ erDiagram
     community ||--o{ domain : "community_id"
     domain ||--o{ asset : "domain_id"
     asset ||--o{ attribute : "asset_id"
+    complex_relation ||--o{ attribute : "complex_relation_id"
     asset ||--o{ asset_tag : "asset_id"
     asset ||--o{ responsibility : "asset_id"
     asset ||--o{ relation : "asset_id1, asset_id2"
     asset ||--o{ complex_relation : "asset_id"
-    complex_relation ||--o{ attribute : "complex_relation_id"
+    asset ||--o{ view_events : "asset_id"
 ```
 
-Plain words: **communities** contain **domains**, domains contain **assets**. Everything else describes assets: their **attributes** (definition, owner-entered fields…), **tags**, **relations** to other assets, and **responsibilities** (who owns or stewards them).
+In words: **communities** contain **domains**, domains contain **assets**. Everything else describes assets: **attributes**, **tags**, **relations**, **responsibilities**, and (optionally) **view events**.
 
-## Conventions that apply to every table
+> **Official rule:** to combine tables for a given date, **every join must include `snapshot_date`.** Joining on ids alone mixes snapshots.
+
+## Conventions
 
 | Convention | Detail |
 |---|---|
-| Ids | `VARCHAR` UUIDs. Join on these, never on names |
-| `snapshot_date` | `DATE`, the day the copy was taken. Present on every table. `snapshot_date_year/month/day` (`BIGINT`) are the folder partitions and repeat the same information |
-| Audit columns | `creator_user_id`, `creator_username`, `creation_date` (TIMESTAMP), `editor_user_id`, `editor_username`, `edited_date` (TIMESTAMP). On every table; omitted from the column lists below |
-| Names are denormalised | e.g. `asset_type_name` appears on `attribute` and `relation`; fewer joins needed |
-| Not in the export | Collibra "meta" objects (see [known-gaps.md](known-gaps.md)): a few rows point at ids that are not in the tables |
-| No user table | Users appear only inside `responsibility` |
-| No relation-type names | `relation` has `relation_type_id` and a role label, but no relation-type name |
+| Ids | Text UUIDs. Join on ids, never on names |
+| `snapshot_date` | Date of the copy. In every table (in `view_events` it is the date the event happened). `snapshot_date_year/month/day` are the folder partitions repeating it |
+| Audit columns | `creator_user_id`, `creator_username`, `creation_date`, `editor_user_id`, `editor_username`, `edited_date`. On every table except `view_events`; not repeated below |
+| Custom and out-of-the-box | Every table contains both (official) |
+| Excluded | Asset types not manageable through the Asset Type Operating Model (Roles, Workflow Definitions…), with their attributes, communities, domains and relations (official) |
+| Not available | No user table; no relation-type names (only ids and role labels) |
+
+Keys below are the **official** primary keys.
 
 ---
 
-## `community`: the community hierarchy
+## `community`
 
-**Grain: one row per community per ancestor level**, a root-to-self path (**verified**: 357 rows for 187 communities; a community at depth *d* has levels 1..*d*; level *d* is itself; deepest = 4; 62 roots).
+Key: `(snapshot_date, community_id, level)`. **One row per community per ancestor level.**
 
-| Column | Type | Meaning |
-|---|---|---|
-| `community_id`, `community_name`, `community_description` | VARCHAR | The community |
-| `is_community_system` | BOOLEAN | Built-in community (4 of 187) |
-| `uri` | VARCHAR | Collibra URI of the community |
-| `parent_community_id` | VARCHAR | Direct parent; null for roots |
-| `level` | INTEGER | Position on the path: 1 = root … *depth* = the community itself |
-| `level_community_id`, `_name`, `_description`, `_uri` | VARCHAR | The ancestor at that `level` |
+| Column | Meaning |
+|---|---|
+| `community_id`, `community_name`, `community_description` | The community |
+| `is_community_system` | Built-in community |
+| `uri` | Deprecated (API v1) |
+| `parent_community_id` | Direct parent; null for top-level communities |
+| `level` | Position on the root-to-self path; the top level is 1 |
+| `level_community_id`, `_name`, `_description`, `_uri` | The community at that level |
 
-Because rows repeat, **`count(*)` over `community` is wrong**; count distinct `community_id`, or use `dim_community`.
+Official tip: a `community_id` spans several rows; **to isolate the unique communities, filter `community_id = level_community_id`** (the row where the path reaches the community itself). *Verified:* every community's rows are exactly levels 1..depth and the last one is itself, so this filter yields one row each. Never `count(*)` the raw table; use `dim_community`.
 
-## `domain`: one row per domain
+## `domain`
 
-Verified unique (585 rows, 585 ids).
+Key: `(snapshot_date, domain_id)`.
 
-| Column | Type | Meaning |
-|---|---|---|
-| `domain_id`, `domain_name`, `domain_description`, `domain_uri` | VARCHAR | The domain |
-| `domain_type_id`, `domain_type_name`, `domain_type_description` | VARCHAR | Its type (Glossary, Physical Data Dictionary, Codelist…) |
-| `is_domain_system` | BOOLEAN | Built-in domain (194 of 585: 187 *Issues Vocabulary Type* plus 7) |
-| `community_id` | VARCHAR | Parent community. One domain's community is missing from the export |
+| Column | Meaning |
+|---|---|
+| `domain_id`, `domain_name`, `domain_description` | The domain |
+| `domain_type_id`, `_name`, `_description` | Its type (Glossary, Physical Data Dictionary, Codelist…) |
+| `is_domain_system` | Built-in domain |
+| `community_id` | Parent community |
+| `domain_uri` | Deprecated |
 
-## `asset`: one row per asset
+Official wording: domains "that contain assets". *Verified on the reference instance:* see the `investigate` section "domains with / without assets" for your own numbers; do not assume every domain has assets.
 
-Verified unique (23,202 rows, 23,202 ids). Includes assets of custom types.
+## `asset`
 
-| Column | Type | Meaning |
-|---|---|---|
-| `asset_id`, `asset_full_name`, `asset_display_name` | VARCHAR | The asset. `full_name` is unique within a domain; `display_name` is what users see |
-| `domain_id` | VARCHAR | Parent domain. **14 assets** point at a domain missing from the export |
-| `asset_type_id`, `asset_type_name` | VARCHAR | Business Term, Table, Column… |
-| `status_id`, `status_name` | VARCHAR | Workflow status (Approved, Candidate…) |
-| `articulation` | DOUBLE | Collibra's articulation score for the asset. **Unknown** how it is computed |
-| `ratings_average` (DOUBLE), `ratings_count` (INTEGER) | | User ratings |
-| `is_asset_system` | BOOLEAN | Built-in asset; none in this export |
+Key: `(snapshot_date, asset_id)`.
 
-## `asset_tag`: one row per tag on an asset (**inferred**)
+| Column | Meaning |
+|---|---|
+| `asset_id`, `asset_full_name`, `asset_display_name` | The asset (`full_name` is unique within its domain; `display_name` is what users see) |
+| `domain_id` | Parent domain |
+| `asset_type_id`, `asset_type_name` | Business Term, Table, Column… |
+| `status_id`, `status_name` | Workflow status |
+| `articulation` | The asset's articulation score (Collibra's documentation gives no formula) |
+| `ratings_average`, `ratings_count` | Aggregated user ratings |
+| `is_asset_system` | Built-in asset |
 
-147 rows. `tag_id`, `tag_name`, `asset_id`, `is_tag_system` (BOOLEAN).
+## `asset_tag`
 
-## `attribute`: one row per attribute value (**inferred**)
+Key: `(snapshot_date, tag_id, asset_id)`. One row per tag on an asset: `tag_id`, `tag_name`, `asset_id`, `is_tag_system`.
 
-An entity-attribute-value table: every kind of attribute (Definition, Description, custom fields) lives here.
+## `attribute`
 
-| Column | Type | Meaning |
-|---|---|---|
-| `attribute_id` | VARCHAR | The attribute instance |
-| `asset_id` | VARCHAR | Owning asset |
-| `asset_type_name` | VARCHAR | Type of that asset (denormalised) |
-| `attribute_type_id`, `attribute_type_name`, `attribute_type_description` | VARCHAR | What the attribute *is* ("Definition"…) |
-| `kind` | VARCHAR | STRING, NUMERIC, BOOLEAN, DATE, SINGLE_VALUE_LIST, MULTI_VALUE_LIST, SCRIPT |
-| `expression_long` | VARCHAR | Text of the value. Filled for essentially every kind (**verified**) |
-| `numeric_value` | DOUBLE | Set for NUMERIC (all rows) |
-| `boolean_value` | BOOLEAN | Set for BOOLEAN (all rows) |
-| `datetime_value` | DATE | Set for DATE (all rows) |
-| `is_attribute_integer` | BOOLEAN | Whether a numeric value is an integer |
-| `complex_relation_id` | VARCHAR | Set when the attribute belongs to a complex relation. Whether `asset_id` is then null: **not checked** |
+Key: `(snapshot_date, attribute_id)`. An entity-attribute-value table: every kind of attribute (Definition, Description, custom fields) is a row.
 
-Value rule (**verified** by counts): lists, strings and scripts use `expression_long` only; numbers, booleans and dates also fill their typed column. Use the typed column to compute with, `expression_long` to display. Long text may contain HTML. How multi-value lists are separated inside `expression_long`: **unknown**.
+| Column | Meaning |
+|---|---|
+| `attribute_id` | The attribute instance |
+| `asset_id` | Owning asset |
+| `complex_relation_id` | Owning complex relation. **Official: an attribute has two possible parents, asset or complex relation; if one has a value the other is null** |
+| `asset_type_name` | Type of the owning asset (denormalised) |
+| `attribute_type_id`, `_name`, `_description` | What the attribute *is* ("Definition"…) |
+| `kind` | STRING, NUMERIC, BOOLEAN, DATE, SINGLE_VALUE_LIST, MULTI_VALUE_LIST, SCRIPT (observed) |
+| `expression_long` | The value as text |
+| `numeric_value`, `boolean_value`, `datetime_value` | The value converted to a number / boolean / date |
+| `is_attribute_integer` | Whether a numeric value is an integer |
 
-## `relation`: relationships between two assets
+*Verified rule:* `expression_long` is filled for essentially every kind; NUMERIC also fills `numeric_value`, BOOLEAN `boolean_value`, DATE `datetime_value` (a plain date, not a timestamp); strings, lists and scripts use text only. Compute with the typed column, display the text. Long text may contain HTML. How multi-value lists are separated inside the text is not documented.
 
-**Grain: every relationship is stored twice**, once per direction (**verified**: 54,720 rows = 2 × 27,360 `relation_id`s; the two rows are exact mirrors).
+## `relation`
 
-| Column | Type | Meaning |
-|---|---|---|
-| `relation_id` | VARCHAR | The relationship (appears in both rows) |
-| `relation_type_id` | VARCHAR | Its type. **No type name available** |
-| `direction` | VARCHAR | `head -> tail` or `tail -> head` |
-| `role_or_corole` | VARCHAR | The role label for this row's direction. Values not inspected |
-| `asset_id1`, `asset_type_id1`, `asset_type_name1` | VARCHAR | First asset of this row |
-| `asset_id2`, `asset_type_id2`, `asset_type_name2` | VARCHAR | Second asset of this row |
-| `is_relation_generated` | BOOLEAN | Created by Collibra rather than by a user (**inferred**) |
+Key: `(snapshot_date, relation_id, direction)`. **Every relationship is stored twice**, once per direction (official: "from head to tail and vice versa"; *verified*: the two rows are exact mirrors).
 
-**Always keep one direction** (`direction = 'head -> tail'`) or you double-count. `fact_relation` does this.
+| Column | Meaning |
+|---|---|
+| `relation_id` | The relationship; appears in both rows |
+| `relation_type_id` | Its type (no type name in the export) |
+| `direction` | `head -> tail` (first asset is the head) or `tail -> head` |
+| `role_or_corole` | The relation's role in the head→tail direction, or its co-role in the tail→head direction |
+| `asset_id1`, `asset_type_id1`, `asset_type_name1` | First asset of this row |
+| `asset_id2`, `asset_type_id2`, `asset_type_name2` | Second asset of this row |
+| `is_relation_generated` | Whether the relation was generated |
 
-## `complex_relation`: n-ary relationships
+Keep one direction or you double-count (`fact_relation` does).
 
-**Grain: one row per participating asset** (9,710 rows / 4,823 relations ≈ 2 each; **verified** ratio, not that every relation has exactly 2).
+## `complex_relation`
 
-`complex_relation_id`, `complex_relation_type_id/_name/_description`, `relation_type_id`, `relation_role` (the participant's role), `asset_id` (the participant).
+Key: `(snapshot_date, complex_relation_id, relation_type_id)`. **One row per relation leg** (a complex relation links two or more assets).
 
-## `responsibility`: who is responsible for what
+`complex_relation_id`, `complex_relation_type_id/_name/_description`, `relation_type_id` (the leg type), `relation_role` (the leg's role), `asset_id` (the asset on that leg).
 
-20,036 rows. Grain **inferred**: one row per (resource, role, user *or* group).
+## `responsibility`
 
-| Column | Type | Meaning |
-|---|---|---|
-| `role_id`, `role_name` | VARCHAR | Owner, Business Steward, Community Manager… |
-| `asset_id` | VARCHAR | The resource. Despite the name, **25% do not match any exported asset** (see [known-gaps.md](known-gaps.md)); 47 are null |
-| `user_id`, `username`, `user_firstname`, `user_lastname`, `user_email`, `user_language`, `user_licensetype` | VARCHAR | The responsible user (**personal data**) |
-| `is_user_guest`, `is_user_api`, `is_user_activated`, `is_user_enabled` | BOOLEAN | User state flags |
-| `group_id`, `group_name` | VARCHAR | Set instead of a user when the role is held by a group |
-| `is_responsibility_system` | BOOLEAN | Always false in this export |
+No primary key; official uniqueness: `(snapshot_date, asset_id, role_id, user_id, group_id)`.
 
-Observation: no responsibility row references a domain or community id. If your organisation assigns owners at domain or community level, **inherited ownership is not visible** in this table.
+| Column | Meaning |
+|---|---|
+| `role_id`, `role_name` | The **resource role** (Owner, Business Steward, Data Quality Manager…) |
+| `asset_id` | The resource. **Null means a global permission** (official) |
+| `user_id`, `username`, `user_firstname`, `user_lastname`, `user_email`, `user_language`, `user_licensetype` | The responsible user (**personal data**). Used only when assigned to a user |
+| `group_id`, `group_name` | The responsible group. A row is for a user *or* a group |
+| `is_user_guest`, `is_user_api`, `is_user_activated`, `is_user_enabled` | User state flags |
+| `is_responsibility_system` | System-generated responsibility |
 
-## Not present
+**What is included (official):** responsibilities assigned **directly to assets**, and those **inherited from domains** (so a domain-level owner appears as rows on the domain's assets). Responsibilities **inherited from communities are excluded.** Resource roles can also attach to **non-catalog resources** such as Data Quality jobs; see [known-gaps.md](known-gaps.md).
 
-**Usage Analytics view events** are documented by Collibra as part of Insights but there is **no such table** in this export (8 folders, only `.parquet`). Cause unknown; a licence or setting is the likeliest explanation.
+## `view_events` (optional)
+
+Key: `(snapshot_date, event_id)`. Official: "all of the view events … as measured in Usage Analytics". **Not part of the eight tables of Collibra's setup guides and absent from the reference snapshot; the columns below are from Collibra's documentation and have not been checked against real data.**
+
+| Column | Meaning |
+|---|---|
+| `snapshot_date` | The date the event happened |
+| `event_id`, `event_time` | The event and its UTC time |
+| `user_id`, `username`, `session_id` | Who viewed, in which HTTP session |
+| `asset_id`, `asset_full_name`, `asset_display_name` | The asset viewed |
+| `domain_id`, `domain_name`, `community_id`, `community_name` | The domain / community viewed |
+| `diagram_id`, `diagram_name`, `dashboard_id`, `dashboard_name`, `view_id`, `view_name` | The diagram / dashboard / view viewed |
+| `page_path`, `page_parameters`, `tab_name` | The page, its query string, and the tab (Overview, History…) |
+
+Only events started **from the Collibra user interface** are counted (not API, Edge or mobile), and only since Usage Analytics was enabled (introduced in Collibra 2022.11; data on communities, domains, dashboards and diagrams since January 2024). Usernames and sessions are personal data.

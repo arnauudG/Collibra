@@ -1,49 +1,38 @@
-# Insights Data Access: what it is
+# Insights Data Access: overview
 
-Everything below comes from Collibra's Product Resource Center (pages fetched 2026-10-11): [Insights Data Access](https://productresources.collibra.com/docs/collibra/latest/Content/Reporting/to_insights-data-access-intro.htm), [Reporting data](https://productresources.collibra.com/docs/collibra/latest/Content/Reporting/co_working-with-data.htm), [Insights tables](https://productresources.collibra.com/docs/collibra/latest/Content/Reporting/co_insights-data-access-tables.htm), [Set up on GCP](https://productresources.collibra.com/docs/collibra/latest/Content/Reporting/ta_create-insights-data-access-gcp.htm), [Set up on AWS](https://productresources.collibra.com/docs/collibra/latest/Content/Reporting/ta_create-insights-data-access-aws.htm).
+Insights Data Access is Collibra's **paid add-on that captures your reporting data every night and lets you download it**. It retains history without touching front-end performance. Sources: Collibra's *Insights Data Access*, *Reporting data*, *Insights tables*, *Entity relationship diagram* and *Set up Insights* pages in the Product Resource Center.
 
 ## The idea in one paragraph
 
-Collibra copies your reporting data **every night** into a snapshot. You can't query that copy directly inside Collibra; instead a REST endpoint hands you a **ZIP of Parquet files** for a chosen date. You load those files into a warehouse (Athena on AWS, BigQuery on GCP, Databricks Lakebase) or, as in this package, just query them locally. Think of it as a daily photograph of your catalogue, not a live API.
+Each night Collibra copies assets, attributes, relations, responsibilities and more into a **snapshot**. You cannot query that copy inside Collibra. A REST endpoint hands you a **ZIP of Parquet files** for a chosen date; you load them into a warehouse (Athena on AWS, BigQuery on GCP, Databricks Lakebase) or, as this toolkit does, query them locally. It is a daily photograph of your catalogue, not a live API.
+
+## Prerequisites
+
+Collibra Platform **5.7 or newer** and a **Collibra Insights licence**. Usage Analytics (the free dashboard) is a different product: it needs no setup, refreshes every 2 hours and has no public API of its own; Insights Data Access is how its events are exposed.
 
 ## Delivery
 
-- Endpoint: `GET <env-url>/rest/2.0/reporting/insights/directDownload?snapshotDate=YYYY-MM-DD&format=zip`
-- It **redirects** to a pre-signed cloud-storage URL valid ~60 s by default, so your HTTP client must follow redirects. `/insights/download` is documented as soon-to-be-deprecated.
-- Requirements: Collibra Platform 5.7+, a Collibra Insights licence (the docs note it is not a free, out-of-the-box product).
-
-## Retention
-
-| Window | Snapshots kept |
+| Endpoint (relative to `/rest/2.0`) | Notes |
 |---|---|
-| Last 31 days | every daily snapshot |
-| Last 12 months | last snapshot of each month |
-| Older than 1 year | last snapshot of each year, indefinitely |
+| `/reporting/insights/directDownload?snapshotDate=YYYY-MM-DD&format=zip` | Recommended. Answers with a redirect to a **pre-signed storage URL valid ~60 s**, so the HTTP client must follow redirects. Works on AWS and GCP |
+| `/reporting/insights/download?...` | Legacy; documented as soon to be deprecated |
 
-The date you request must be within the last 31 days **or** a month-end (the client checks this up front). Processing runs in UTC; "data ready" times vary by cloud region (e.g. AWS London ~06:00 UTC, GCP Virginia ~10:00 UTC). Request yesterday's snapshot, not today's.
+The date needs the full `YYYY-MM-DD` format.
+
+## Timing and retention
+
+* Processing happens in **UTC**; "ready" times vary by region (roughly 05:00–13:00 UTC, one region as early as 01:00; see Collibra's *Reporting data* table). Request **yesterday's** snapshot, not today's.
+* Retention: every daily snapshot for **31 days**, then the last snapshot of each **month** for 12 months, then the last of each **year** indefinitely.
+* Each record carries the snapshot date, so several snapshots can sit in one table (history).
 
 ## Tables
 
-The docs list these (the ZIP holds one folder of Parquet per table; the GCP guide shows eight folders):
+Eight tables are loaded by Collibra's setup guides: `community`, `domain`, `asset`, `asset_tag`, `attribute`, `relation`, `complex_relation`, `responsibility`. A ninth, `view_events` (Usage Analytics), is documented but optional. Details and columns: [data-dictionary.md](data-dictionary.md).
 
-| Folder | Holds |
-|---|---|
-| `community` | Community hierarchy |
-| `domain` | All domains |
-| `asset` | All assets, incl. custom asset types |
-| `asset_tag` | Asset tags |
-| `attribute` | Attributes of assets (Definition, Description, custom types) |
-| `relation` | Binary relations (e.g. categorizes / is categorized by), incl. custom types |
-| `complex_relation` | Complex (n-ary) relations |
-| `responsibility` | Owner, Stakeholder, etc. for a resource |
-| *(folder name not documented)* | Usage Analytics view events: page visits per user session |
+## What it does not give you
 
-**Exclusions:** asset types not manageable through the Asset Type Operating Model (e.g. Roles, Workflow Definitions) are excluded, along with their attributes, communities, domains, and relations.
+See [known-gaps.md](known-gaps.md): excluded types, community-inherited responsibilities, hidden built-in objects, Data Quality resources, UI-only view events.
 
-**Privacy:** Usage Analytics data can be subject to access restrictions in your organisation; get approval before using it.
+## Where to go next
 
-## What a real snapshot looks like (observed 2026-10-10)
-
-- Each table is a folder of **Hive-partitioned** Parquet: `<table>/snapshot_date_year=…/snapshot_date_month=…/snapshot_date_day=…/*.parquet`.
-- All eight tables above were present. No Usage Analytics table was in the snapshot (reason unknown).
-- Column names and types are not in the public docs; they are listed in [`data-modeling.md`](data-modeling.md) and printed by `collibra-insights explore <snapshot>`.
+New to a client? Follow the [client playbook](client-playbook.md).
