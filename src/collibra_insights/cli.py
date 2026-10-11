@@ -3,10 +3,25 @@
 from __future__ import annotations
 
 import argparse
+from itertools import islice
 
+from .client import CollibraClient
 from .explore import Snapshot
 from .insights import InsightsClient
 from .model import build_model, check_model
+
+
+def ping(client: CollibraClient) -> list[str]:
+    """Live connectivity + pagination check. Prints counts and key names only, no content."""
+    page = client.get_json("/communities", {"limit": 2})
+    items = list(islice(client.paginate("/communities", page_size=2), 5))
+    ids = [i.get("id") for i in items]
+    return [
+        "reachable: yes",
+        f"envelope keys: {sorted(page)}",
+        f"total communities: {page.get('total')}",
+        f"paginate(page_size=2), first 5 items: got {len(items)}, unique ids {len(set(ids))}",
+    ]
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -21,10 +36,14 @@ def main(argv: list[str] | None = None) -> None:
     q.add_argument("path")
     q.add_argument("sql")
     q.add_argument("--model", action="store_true", help="also create the dim_/fact_ views first")
+    sub.add_parser("ping", help="check credentials and pagination against COLLIBRA_URL")
     k = sub.add_parser("check", help="build the model and report conformance violations")
     k.add_argument("path")
     args = p.parse_args(argv)
 
+    if args.cmd == "ping":
+        print("\n".join(ping(CollibraClient.from_env())))
+        return
     if args.cmd == "check":
         for name, n in check_model(Snapshot(args.path)).items():
             print(f"{'OK  ' if n == 0 else 'WARN'} {name}: {n}")

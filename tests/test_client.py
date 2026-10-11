@@ -88,3 +88,15 @@ def test_paginate_respects_server_capped_limit():
 def test_paginate_empty():
     c, _ = make(page([], total=0))
     assert list(c.paginate("/things")) == []
+
+
+def test_ping_reports_counts_only():
+    from collibra_insights.cli import ping
+
+    items = [{"id": f"id{i}", "name": "SECRET"} for i in range(5)]
+    first = FakeResp(payload={"results": items[:2], "total": 5, "limit": 2, "offset": 0})
+    pages = [FakeResp(payload={"results": items[i:i + 2], "total": 5, "limit": 2}) for i in (0, 2, 4)]
+    c, _ = make(first, *pages)
+    out = ping(c)
+    assert "total communities: 5" in out[2] and "got 5, unique ids 5" in out[3]
+    assert "SECRET" not in "\n".join(out)

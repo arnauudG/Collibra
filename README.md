@@ -18,6 +18,7 @@ collibra-insights download 2026-10-10                # -> snapshots/insights-202
 collibra-insights explore snapshots/insights-2026-10-10
 collibra-insights query snapshots/insights-2026-10-10 "select count(*) from asset"
 collibra-insights check snapshots/insights-2026-10-10   # build the model + conformance report
+collibra-insights ping                                  # live check: credentials + pagination
 ```
 
 ```python
