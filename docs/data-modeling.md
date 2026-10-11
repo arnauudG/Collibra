@@ -58,7 +58,7 @@ There is no standalone user table: users only appear inside `responsibility`, so
 
 **d) Complex relations are one row per participant** (`relation_role` + `asset_id` under a `complex_relation_id`; 9,710 rows / 4,823 ids, about 2 each). Model as a bridge keyed by `complex_relation_id`.
 
-**e) Community hierarchy is pre-flattened.** `level` and `level_community_*` give one row per community × level, so `community_id` repeats (357 rows / 187 ids, verified). `dim_community` keeps one row per `community_id`. An ancestors bridge is **not built yet**: what `level` means exactly (the community's own depth vs. the ancestor's) still needs checking.
+**e) Community hierarchy is pre-flattened.** `level` and `level_community_*` give one row per community × level, so `community_id` repeats (357 rows / 187 ids, verified; the live REST API also reports 187 communities). `dim_community` keeps one row per `community_id`. An ancestors bridge is **not built yet**: what `level` means exactly (the community's own depth vs. the ancestor's) still needs checking.
 
 ## 5. Checks run so far, and still open
 

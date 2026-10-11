@@ -43,7 +43,7 @@ Each layer works alone and builds on the one above it:
 from collibra_insights import CollibraClient, InsightsClient
 
 client = CollibraClient.from_env()                  # reusable for any REST 2.0 endpoint
-for community in client.paginate("/communities"):   # pagination: not yet verified on a live instance
+for community in client.paginate("/communities"):   # pagination verified live on this endpoint
     ...
 folder = InsightsClient(client).download_snapshot("2026-10-10", "snapshots")
 ```
@@ -52,7 +52,7 @@ folder = InsightsClient(client).download_snapshot("2026-10-10", "snapshots")
 
 | Piece | State |
 |---|---|
-| Generic client (auth, typed errors, pagination) | Implemented, tested against **fake** HTTP. `paginate` assumes the `{total, limit, results}` envelope and is **unverified live** |
+| Generic client (auth, typed errors, pagination) | Implemented, tested against **fake** HTTP. `paginate` verified live on `/communities` only (envelope and multi-page walk as assumed); other endpoints untested |
 | Insights download, safe unzip, DuckDB views, schema discovery | Implemented, unit-tested against **fake** HTTP and **synthetic** Parquet |
 | Run against a real Collibra environment | **Done once** (training instance, snapshot 2026-10-10): download + explore of all 8 tables worked |
 | Column-level schema | Observed and documented in `docs/data-modeling.md`; still **discovered at runtime**, not hardcoded |

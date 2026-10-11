@@ -100,7 +100,8 @@ class CollibraClient:
         """Yield items of ``results`` across offset/limit pages.
 
         Assumes Collibra's usual ``{"total", "offset", "limit", "results"}`` envelope.
-        NOT yet checked against a live instance; try ``GET /rest/2.0/communities?limit=2``.
+        Verified live on ``/communities`` (2026-10-11): envelope keys and multi-page walk as assumed.
+        Other endpoints are untested.
         """
         offset = 0
         while True:
