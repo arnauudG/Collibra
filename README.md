@@ -1,9 +1,8 @@
 # collibra-insights
 
-A small Python package to **download Collibra Insights Data Access snapshots** and **explore them locally** with DuckDB. Companion guides explain what the data is and how to model it:
+A small Python package to **download Collibra Insights Data Access snapshots** and **explore them locally** with DuckDB.
 
-- [`docs/insights-data-access.md`](docs/insights-data-access.md): what Insights Data Access is, how it is delivered, retention, and the tables
-- [`docs/data-modeling.md`](docs/data-modeling.md): how to model the tables (dimensions, facts, snapshots, pivoting attributes)
+**Documentation for colleagues starts at [`docs/README.md`](docs/README.md)**: overview, data dictionary, known gaps, modeling guide and a tested SQL cookbook.
 
 ## Quick start
 
@@ -17,6 +16,8 @@ export COLLIBRA_USER=...  COLLIBRA_PASSWORD=...     # or COLLIBRA_TOKEN=...
 collibra-insights download 2026-10-10                # -> snapshots/insights-2026-10-10/
 collibra-insights explore snapshots/insights-2026-10-10
 collibra-insights query snapshots/insights-2026-10-10 "select count(*) from asset"
+collibra-insights query snapshots/insights-2026-10-10 --model --file q.sql          # multi-line SQL; --model adds dim_/fact_ views
+# point at a parent folder holding several snapshots to get history (snapshot_date tells them apart)
 collibra-insights check snapshots/insights-2026-10-10   # build the model + conformance report
 collibra-insights ping                                  # live check: credentials + pagination
 ```

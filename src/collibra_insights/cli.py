@@ -45,7 +45,8 @@ def _run(argv: list[str] | None = None) -> None:
     e.add_argument("path")
     q = sub.add_parser("query", help="run a SQL query against an extracted snapshot")
     q.add_argument("path")
-    q.add_argument("sql")
+    q.add_argument("sql", nargs="?", help="SQL text (or use --file)")
+    q.add_argument("--file", help="read the SQL from a file instead ('-' = stdin)")
     q.add_argument("--model", action="store_true", help="also create the dim_/fact_ views first")
     i = sub.add_parser("investigate", help="aggregate evidence about open questions in an export")
     i.add_argument("path")
@@ -72,7 +73,10 @@ def _run(argv: list[str] | None = None) -> None:
         snap = Snapshot(args.path)
         if args.model:
             build_model(snap)
-        cur = snap.sql(args.sql)
+        sql = (sys.stdin.read() if args.file == "-" else open(args.file).read()) if args.file else args.sql
+        if not sql:
+            raise CollibraError("give SQL text or --file")
+        cur = snap.sql(sql)
         cols = [c[0] for c in cur.description]
         print(" | ".join(cols))
         for row in cur.fetchall():

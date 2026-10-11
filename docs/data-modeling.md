@@ -1,6 +1,6 @@
 # Modelling Insights data
 
-> **Status:** columns below are **observed** from a real snapshot (2026-10-10, a training instance). How the tables behave (grain, duplicates, hierarchy shape) is partly **inferred from column names** and marked *to verify*; the queries in §5 settle each one.
+> **Status:** columns are **observed** from a real snapshot (2026-10-10, a training instance); the full column list is in [data-dictionary.md](data-dictionary.md). Behaviour marked *verified* was checked with queries on real data. Worked examples: [cookbook.md](cookbook.md).
 
 ## 1. What a snapshot contains (observed)
 
@@ -89,28 +89,6 @@ These are aggregates only (no names or emails).
 3. Row counts within tolerance of the previous snapshot.
 4. Excluded types (Roles, Workflow Definitions) are absent.
 
-## 8. What we know about gaps (export vs. live instance, 2026-10-10)
+## 8. Gaps between the export and the live instance
 
-Evidence: `collibra-insights investigate --live`. Collibra has **"meta" objects** that its list endpoints hide by default (`excludeMeta=false` reveals them; the parameter demonstrably changes the counts).
-
-| | Live (default) | Live incl. meta | Export | Hidden by default | In live-with-meta but not in export |
-|---|---|---|---|---|---|
-| Communities | 187 | 189 | 187 | 2 | 2 |
-| Domains | 398 | 590 | 585 | 192 | 5 |
-| Assets | 23,099 | 28,224 | 23,202 | 5,125 | 5,022 |
-
-| Finding | Evidence | Confidence |
-|---|---|---|
-| The export includes **some** meta objects: the 187 *Issues Vocabulary Type* domains, 101 *Data Usage* and 2 *Data Issue* assets | export minus live-default = 187 domains, 103 assets, exactly those types | High |
-| The export **omits other** meta objects: 2 communities, 5 domains, 5,022 assets | live-with-meta minus export | High arithmetic; assumes export ⊆ live-with-meta |
-| The 14 orphan assets and the 1 orphan domain sit under omitted built-in objects (Issue Classification domain, community id `00000000-…`) | live lookups of those ids succeed; ids use the system-style prefix | High |
-| 4,904 unresolved **Community Manager** responsibilities are held by **one user** and point at hidden meta assets (spread sample of 15: 13 *Assignment Characteristics*, 2 *Articulation Scores*) | `investigate --live` | Medium-high: sample of 15 of 4,904 |
-| The earlier "Role Type" lead was a **biased sample** (lowest ids); only 60 ids are system-style | id-shape query | High |
-| 122 **Data Quality Manager** (13 users) + 1 **Data Quality Viewer** rows point at ids that return 404 as asset, domain and community | 16 of 16 sampled | High that they are none of those three; **what they are is unknown** |
-| 47 responsibilities have no `asset_id`; likely global role assignments | many roles appear exactly once | Low (inferred) |
-| Why the export omits some meta objects but not others: consistent with the docs' rule that types not manageable through the Asset Type Operating Model are excluded | docs wording only | Unverified |
-| No Usage Analytics table | 8 folders, `.parquet` only | High that it is absent; cause unknown |
-
-Note `is_domain_system` is **not** the same as meta: 194 exported domains are flagged system (187 Issues Vocabulary + 7 others), and the 7 others are visible in the default live list (391 non-system + 7 = 398).
-
-Practical rules: `LEFT JOIN` from facts to dimensions and keep unmatched rows; use `fact_responsibility.asset_resolution`; exclude `not_in_export` rows when analysing ownership of real assets.
+Moved to its own page for readers who only need the caveats: see [known-gaps.md](known-gaps.md).

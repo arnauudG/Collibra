@@ -10,19 +10,26 @@ from .tables import DOCUMENTED_TABLES
 
 
 class Snapshot:
-    """Each folder of Parquet files in the snapshot becomes a DuckDB view named after the folder."""
+    """Each table folder of Parquet files becomes a DuckDB view named after it.
+
+    ``path`` may be one snapshot folder or a parent holding several (``snapshots/``): the same
+    table from every snapshot is unioned, and ``snapshot_date`` tells them apart (history/trends).
+    """
 
     def __init__(self, path: str | Path, database: str = ":memory:"):
         self.path = Path(path)
         self.con = duckdb.connect(database)
         self.tables: list[str] = []
+        groups: dict[str, list[Path]] = {}
         for folder in sorted(self._table_folders()):
-            glob = (folder / "**" / "*.parquet").as_posix().replace("'", "''")
+            groups.setdefault(folder.name, []).append(folder)  # same table in several snapshots -> one view
+        for name, folders in sorted(groups.items()):
+            globs = ", ".join("'" + (f / "**" / "*.parquet").as_posix().replace("'", "''") + "'" for f in folders)
             self.con.execute(
-                f'CREATE OR REPLACE VIEW "{folder.name}" AS '
-                f"SELECT * FROM read_parquet('{glob}', hive_partitioning=true, union_by_name=true)"
+                f'CREATE OR REPLACE VIEW "{name}" AS '
+                f"SELECT * FROM read_parquet([{globs}], hive_partitioning=true, union_by_name=true)"
             )
-            self.tables.append(folder.name)
+            self.tables.append(name)
         if not self.tables:
             raise FileNotFoundError(f"no .parquet files under {self.path}")
 

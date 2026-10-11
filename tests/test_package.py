@@ -38,6 +38,26 @@ def test_snapshot_hive_partitioned_layout(tmp_path):
     assert "snapshot_date_day" in [c[0] for c in s.describe("asset")]
 
 
+def test_several_snapshots_under_one_parent_are_unioned(tmp_path):
+    for day, n in (("09", 3), ("10", 2)):
+        d = tmp_path / f"insights-2026-10-{day}" / "asset" / "snapshot_date_year=2026" / "snapshot_date_month=10" / f"snapshot_date_day={day}"
+        d.mkdir(parents=True)
+        pq.write_table(pa.table({"id": list(range(n)), "snapshot_date": [f"2026-10-{day}"] * n}), d / "p.parquet")
+    s = Snapshot(tmp_path)
+    assert s.tables == ["asset"] and s.row_counts() == {"asset": 5}
+    assert s.sql("select count(distinct snapshot_date) from asset").fetchone() == (2,)
+
+
+def test_cli_query_from_file(tmp_path, capsys):
+    from collibra_insights.cli import main
+
+    _make_snapshot(tmp_path)
+    q = tmp_path / "q.sql"
+    q.write_text("select count(*) as n\nfrom asset\n")
+    main(["query", str(tmp_path), "--file", str(q)])
+    assert capsys.readouterr().out.splitlines() == ["n", "3"]
+
+
 def test_cli_query(tmp_path, capsys):
     from collibra_insights.cli import main
 
