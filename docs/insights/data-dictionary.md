@@ -22,6 +22,78 @@ In words: **communities** contain **domains**, domains contain **assets**. Every
 
 > **Official rule:** to combine tables for a given date, **every join must include `snapshot_date`.** Joining on ids alone mixes snapshots.
 
+## Joining the raw tables
+
+**Every join includes `snapshot_date`** (official rule). The join keys, with what to expect:
+
+| From → to | Join on (plus `snapshot_date`) | Rows per left row | Watch out |
+|---|---|---|---|
+| `asset` → `domain` | `asset.domain_id = domain.domain_id` | 1 | a few assets point at a domain missing from the export: use `LEFT JOIN` |
+| `domain` → `community` | `domain.community_id = community.community_id` **and `community.community_id = community.level_community_id`** | 1 | without the second condition a community matches once per level |
+| `asset` → `attribute` | `attribute.asset_id = asset.asset_id` | 0..n | filter on `attribute_type_name`; one asset has many attributes |
+| `attribute` → `complex_relation` | `attribute.complex_relation_id = complex_relation.complex_relation_id` | **1 per leg** | the attribute repeats once for each leg of the relation |
+| `asset` → `asset_tag` | `asset_tag.asset_id = asset.asset_id` | 0..n | |
+| `asset` → `relation` | `relation.asset_id1 = asset.asset_id` (and/or `asset_id2`) | 2 per relationship | stored twice: filter `direction = 'head -> tail'` |
+| `asset` → `complex_relation` | `complex_relation.asset_id = asset.asset_id` | 0..n | one row per leg |
+| `asset` → `responsibility` | `responsibility.asset_id = asset.asset_id` | 0..n | ~a quarter of rows match no exported asset; null = global permission |
+| `asset` → `view_events` | `CAST(view_events.asset_id AS VARCHAR) = asset.asset_id` and **an explicit asset snapshot** | 0..n | `view_events.snapshot_date` is the *event* date, not an asset snapshot |
+
+Worked examples (they run on the raw tables):
+
+```sql
+-- the asset > domain > community path
+SELECT a.asset_display_name, d.domain_name, c.community_name
+FROM asset a
+LEFT JOIN domain d ON d.snapshot_date = a.snapshot_date AND d.domain_id = a.domain_id
+LEFT JOIN community c ON c.snapshot_date = d.snapshot_date
+                     AND c.community_id = d.community_id
+                     AND c.community_id = c.level_community_id
+```
+
+```sql
+-- an asset with its definition text
+SELECT a.asset_display_name, t.expression_long AS definition
+FROM asset a
+JOIN attribute t ON t.snapshot_date = a.snapshot_date AND t.asset_id = a.asset_id
+WHERE t.attribute_type_name = 'Definition'
+```
+
+```sql
+-- both ends of every relationship, one direction only
+SELECT r.relation_id, a1.asset_display_name AS head, a2.asset_display_name AS tail
+FROM relation r
+JOIN asset a1 ON a1.snapshot_date = r.snapshot_date AND a1.asset_id = r.asset_id1
+JOIN asset a2 ON a2.snapshot_date = r.snapshot_date AND a2.asset_id = r.asset_id2
+WHERE r.direction = 'head -> tail'
+```
+
+```sql
+-- the legs of the complex relation an attribute belongs to
+SELECT t.attribute_type_name, cr.complex_relation_type_name, cr.relation_role, cr.asset_id
+FROM attribute t
+JOIN complex_relation cr ON cr.snapshot_date = t.snapshot_date AND cr.complex_relation_id = t.complex_relation_id
+```
+
+```sql
+-- responsibilities, keeping the ones whose asset is not in the export
+SELECT r.role_name, r.asset_id, a.asset_id IS NOT NULL AS asset_in_export
+FROM responsibility r
+LEFT JOIN asset a ON a.snapshot_date = r.snapshot_date AND a.asset_id = r.asset_id
+```
+
+```sql
+-- view events against an explicitly chosen asset snapshot
+SELECT a.asset_display_name, count(*) AS views
+FROM view_events v
+JOIN asset a ON a.asset_id = CAST(v.asset_id AS VARCHAR)
+            AND a.snapshot_date = (SELECT max(snapshot_date) FROM asset)
+GROUP BY 1
+```
+
+The [modeling guide](modeling.md) packages all of this into a star schema so you rarely write these joins by hand.
+
+---
+
 ## Conventions
 
 | Convention | Detail |

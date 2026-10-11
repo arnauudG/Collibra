@@ -54,7 +54,21 @@ ORDER BY path
 
 ## Data quality and completeness
 
-### 4. Which domains are empty?
+### 4. How many assets sit under each top-level community?
+```sql
+SELECT b.ancestor_name AS top_level_community, count(*) AS assets
+FROM dim_asset a
+JOIN bridge_community_ancestor b
+  ON b.snapshot_date = a.snapshot_date
+ AND b.community_id = a.community_id
+ AND b.ancestor_level = 1
+GROUP BY 1
+ORDER BY 2 DESC
+```
+*Reads as:* a roll-up of the community tree: level 1 of each community's path is its top-level ancestor, so this works however deep the tree is.
+*Watch out:* assets whose domain is missing from the export have no community and drop out.
+
+### 5. Which domains are empty?
 ```sql
 SELECT d.domain_type_name, d.is_domain_system, count(*) AS empty_domains
 FROM dim_domain d
@@ -66,7 +80,7 @@ ORDER BY 3 DESC
 ```
 *Reads as:* housekeeping candidates. Built-in domains (`is_domain_system`) are normally empty and should be ignored; empty non-system domains are clean-up or onboarding candidates.
 
-### 5. How many Business Terms have a definition, per domain?
+### 6. How many Business Terms have a definition, per domain?
 ```sql
 SELECT a.domain_name,
        count(*) AS terms,
@@ -84,7 +98,7 @@ ORDER BY terms DESC
 ```
 *Watch out:* the attribute type is matched **by name** (`'Definition'`); spelling and language depend on your operating model. Check `SELECT DISTINCT attribute_type_name FROM fact_attribute`.
 
-### 6. Where are Business Terms in the approval pipeline?
+### 7. Where are Business Terms in the approval pipeline?
 ```sql
 SELECT domain_name, status_name, count(*) AS terms
 FROM dim_asset
@@ -94,7 +108,19 @@ ORDER BY 1, 3 DESC
 ```
 *Reads as:* the status mix per domain, e.g. how many terms are still *Candidate* versus *Approved*. Status names are your workflow's; list them with `SELECT DISTINCT status_name FROM dim_asset`.
 
-### 7. Attribute completeness by asset type
+### 8. Which assets share a name?
+```sql
+SELECT asset_type_name, asset_display_name, count(*) AS copies, count(DISTINCT domain_id) AS domains
+FROM dim_asset
+GROUP BY 1, 2
+HAVING count(*) > 1
+ORDER BY 3 DESC
+LIMIT 25
+```
+*Reads as:* possible duplicates (or legitimately reused names). Several copies spread over several domains is the classic "same term defined twice" smell.
+*Watch out:* assumes one snapshot is loaded; with several, every asset repeats once per snapshot.
+
+### 9. Attribute completeness by asset type
 ```sql
 WITH n AS (
     SELECT snapshot_date, asset_type_name, count(*) AS assets
@@ -115,7 +141,7 @@ ORDER BY f.asset_type_name, pct_filled DESC
 ```
 *Reads as:* for each asset type, how often each attribute is filled in. Attributes that are never filled for a type do not appear at all.
 
-### 8. Which Business Terms have no owner?
+### 10. Which Business Terms have no owner?
 ```sql
 SELECT a.domain_name, count(*) AS terms_without_owner
 FROM dim_asset a
@@ -130,7 +156,7 @@ ORDER BY 2 DESC
 ```
 *Watch out:* the export includes asset-level responsibilities and those **inherited from domains**, but **not those inherited from communities**. If owners are assigned at community level, this **overstates** the gap. Role names are matched by text (`'Owner'`); list yours with `SELECT DISTINCT role_name FROM fact_responsibility`.
 
-### 9. Stale content: not edited for a year
+### 11. Stale content: not edited for a year
 ```sql
 SELECT domain_name, asset_type_name, count(*) AS stale_assets
 FROM dim_asset
@@ -144,7 +170,7 @@ ORDER BY 3 DESC
 
 ## People and responsibilities
 
-### 10. Who is responsible for how much?
+### 12. Who is responsible for how much?
 ```sql
 SELECT u.username, r.role_name, count(*) AS assets
 FROM fact_responsibility r
@@ -156,7 +182,7 @@ LIMIT 25
 ```
 *Watch out:* the `in_export` filter removes ~5,000 rows pointing at hidden meta assets; without it one user appears to manage thousands of assets. Group-held responsibilities (`group_id`) are not included.
 
-### 11. Which licence types hold responsibilities?
+### 13. Which licence types hold responsibilities?
 ```sql
 SELECT user_licensetype, is_user_enabled, count(*) AS users
 FROM dim_user
@@ -165,7 +191,7 @@ ORDER BY 3 DESC
 ```
 *Watch out:* **only users with at least one responsibility** exist in the export. This is not a licence inventory.
 
-### 12. Which groups hold responsibilities, and for what?
+### 14. Which groups hold responsibilities, and for what?
 ```sql
 SELECT group_name, role_name, count(*) AS assets
 FROM fact_responsibility
@@ -174,7 +200,7 @@ GROUP BY 1, 2
 ORDER BY 3 DESC
 ```
 
-### 13. Who creates the content?
+### 15. Who creates the content?
 ```sql
 WITH per AS (
     SELECT creator_username, count(*) AS created
@@ -191,7 +217,7 @@ LIMIT 20
 *Reads as:* contribution concentration. If three people created most of the catalogue, that is a continuity risk. It is also the best **adoption proxy when `view_events` is absent**.
 *Watch out:* integration and API users create content in bulk and will top the list; judge them separately. Usernames are personal data.
 
-### 14. Which responsibilities look like domain-level assignments?
+### 16. Which responsibilities look like domain-level assignments?
 ```sql
 WITH n AS (
     SELECT snapshot_date, domain_id, count(*) AS assets
@@ -221,7 +247,7 @@ LIMIT 25
 
 ## Relationships and lineage-style questions
 
-### 15. Which assets have no relations at all?
+### 17. Which assets have no relations at all?
 ```sql
 SELECT a.asset_type_name, count(*) AS isolated_assets
 FROM dim_asset a
@@ -234,7 +260,7 @@ ORDER BY 2 DESC
 ```
 *Reads as:* content that is not connected to anything, a typical governance smell. `fact_relation` keeps one direction per relationship, so the `OR` over both ends is what makes this correct.
 
-### 16. Which assets are the most connected?
+### 18. Which assets are the most connected?
 ```sql
 WITH ends AS (
     SELECT snapshot_date, asset_id1 AS asset_id FROM fact_relation
@@ -249,7 +275,7 @@ ORDER BY 3 DESC
 LIMIT 20
 ```
 
-### 17. What is connected to this asset? (impact analysis, up to 3 hops)
+### 19. What is connected to this asset? (impact analysis, up to 3 hops)
 ```sql
 WITH RECURSIVE start AS (
     SELECT snapshot_date, asset_id FROM dim_asset
@@ -277,7 +303,38 @@ ORDER BY 1, 2, 3
 *Reads as:* everything within three relation hops of the asset, nearest first. Replace `'My Business Term'` (add a domain filter if names repeat).
 *Watch out:* relations are followed in **both** directions and **all relation types are mixed** (the export has no type names), so the result grows fast. This approximates *business* impact; it is **not technical lineage**, which is not part of Insights.
 
-### 18. How do asset types connect to each other?
+### 20. Which Business Terms are linked to technical assets?
+```sql
+SELECT t.domain_name,
+       count(*) AS terms,
+       count(l.term_id) AS linked_to_technical_asset,
+       round(100.0 * count(l.term_id) / count(*), 1) AS pct_linked
+FROM dim_asset t
+LEFT JOIN (
+    SELECT DISTINCT snapshot_date, asset_id1 AS term_id FROM fact_relation
+    WHERE asset_type_name1 = 'Business Term' AND asset_type_name2 IN ('Column', 'Table')
+    UNION
+    SELECT DISTINCT snapshot_date, asset_id2 FROM fact_relation
+    WHERE asset_type_name2 = 'Business Term' AND asset_type_name1 IN ('Column', 'Table')
+) l ON l.snapshot_date = t.snapshot_date AND l.term_id = t.asset_id
+WHERE t.asset_type_name = 'Business Term'
+GROUP BY 1
+ORDER BY terms DESC
+```
+*Reads as:* business-to-technical traceability, the classic governance KPI: how many terms are actually attached to data.
+*Watch out:* technical asset type names differ by operating model (`Column`, `Table`, `Data Set`…); list yours with `SELECT DISTINCT asset_type_name FROM dim_asset`. Both ends are tested because a relation is stored in one direction.
+
+### 21. What do complex relations connect?
+```sql
+SELECT complex_relation_type_name, relation_role, count(*) AS legs,
+       count(DISTINCT complex_relation_id) AS relations
+FROM bridge_complex_relation
+GROUP BY 1, 2
+ORDER BY 3 DESC
+```
+*Reads as:* which kinds of n-ary relations exist and the roles their legs play. Join `asset_id` to `dim_asset` to see what sits on each leg.
+
+### 22. How do asset types connect to each other?
 ```sql
 SELECT asset_type_name1 AS from_type, asset_type_name2 AS to_type,
        role_or_corole, count(*) AS relations
@@ -293,7 +350,7 @@ ORDER BY 4 DESC
 
 Put several snapshots under one parent folder (`snapshots/insights-2026-10-09`, `…-10`) and point `--model` at the parent. The date literals below are examples; change them.
 
-### 19. How did inventory change over time?
+### 23. How did inventory change over time?
 ```sql
 SELECT snapshot_date, asset_type_name, count(*) AS assets
 FROM dim_asset
@@ -301,7 +358,7 @@ GROUP BY 1, 2
 ORDER BY 1, 3 DESC
 ```
 
-### 20. What was added between two snapshots?
+### 24. What was added between two snapshots?
 ```sql
 SELECT b.asset_type_name, count(*) AS new_assets
 FROM dim_asset b
@@ -314,7 +371,46 @@ ORDER BY 2 DESC
 ```
 *Reads as:* assets present on the later date and absent on the earlier one. Swap the dates to see what was removed.
 
-### 21. When was content created?
+### 25. Which statuses changed between two snapshots?
+```sql
+SELECT a.status_name AS from_status, b.status_name AS to_status, count(*) AS assets
+FROM dim_asset a
+JOIN dim_asset b
+  ON b.asset_id = a.asset_id
+ AND a.snapshot_date = DATE '2026-10-09'
+ AND b.snapshot_date = DATE '2026-10-10'
+WHERE a.status_name IS DISTINCT FROM b.status_name
+GROUP BY 1, 2
+ORDER BY 3 DESC
+```
+*Reads as:* the movements through your approval workflow (e.g. *Candidate* → *Approved*) between two dates. This is the substitute for status history, which Insights does not store.
+*Watch out:* an asset that moved twice between the dates shows only its net change.
+
+### 26. Who gained or lost responsibilities between two snapshots?
+```sql
+WITH old_set AS (
+    SELECT DISTINCT asset_id, role_name, user_id FROM fact_responsibility
+    WHERE snapshot_date = DATE '2026-10-09' AND user_id IS NOT NULL AND asset_resolution = 'in_export'
+),
+new_set AS (
+    SELECT DISTINCT asset_id, role_name, user_id FROM fact_responsibility
+    WHERE snapshot_date = DATE '2026-10-10' AND user_id IS NOT NULL AND asset_resolution = 'in_export'
+)
+SELECT 'gained' AS change, n.role_name, count(*) AS assignments
+FROM new_set n
+WHERE NOT EXISTS (SELECT 1 FROM old_set o WHERE o.asset_id = n.asset_id AND o.role_name = n.role_name AND o.user_id = n.user_id)
+GROUP BY 2
+UNION ALL
+SELECT 'lost', o.role_name, count(*)
+FROM old_set o
+WHERE NOT EXISTS (SELECT 1 FROM new_set n WHERE o.asset_id = n.asset_id AND o.role_name = n.role_name AND o.user_id = n.user_id)
+GROUP BY 2
+ORDER BY 1, 3 DESC
+```
+*Reads as:* ownership churn: how many assignments appeared and disappeared per role. A spike usually means a reorganisation or a bulk change.
+*Watch out:* domain-level assignments are expanded onto assets, so one change on a domain shows as many rows.
+
+### 27. When was content created?
 ```sql
 SELECT date_trunc('month', CAST(creation_date AS TIMESTAMP)) AS month, asset_type_name, count(*) AS created
 FROM dim_asset
@@ -327,7 +423,7 @@ ORDER BY 1 DESC, 3 DESC
 
 ## Tags and attributes
 
-### 22. Is definition coverage improving?
+### 28. Is definition coverage improving?
 ```sql
 WITH defined AS (
     SELECT DISTINCT snapshot_date, asset_id
@@ -344,7 +440,7 @@ ORDER BY 1
 ```
 *Reads as:* the governance KPI over time. Needs several snapshots; month-end snapshots are enough and outlive the 31-day window.
 
-### 23. Which tags are used most?
+### 29. Which tags are used most?
 ```sql
 SELECT tag_name, count(DISTINCT asset_id) AS assets
 FROM bridge_asset_tag
@@ -352,7 +448,7 @@ GROUP BY 1
 ORDER BY 2 DESC
 ```
 
-### 24. Which sensitive-tagged assets have no owner?
+### 30. Which sensitive-tagged assets have no owner?
 ```sql
 SELECT a.asset_type_name, a.domain_name, count(*) AS tagged_without_owner
 FROM bridge_asset_tag t
@@ -369,7 +465,7 @@ ORDER BY 3 DESC
 *Reads as:* a risk list: sensitive content nobody is accountable for. Replace `'PII'` with the client's tag (`SELECT tag_name, count(*) FROM bridge_asset_tag GROUP BY 1` lists them).
 *Watch out:* same ownership caveat as *Which Business Terms have no owner?* (community-level owners are invisible).
 
-### 25. Which attribute types are used most, and how are they typed?
+### 31. Which attribute types are used most, and how are they typed?
 ```sql
 SELECT attribute_type_name, kind, count(*) AS values_, count(DISTINCT asset_id) AS assets
 FROM fact_attribute
@@ -383,7 +479,7 @@ ORDER BY 3 DESC
 
 These recipes only run if your snapshots contain `view_events` (check with `collibra-insights tables-available`). Only **user-interface** events are counted, usernames are personal data, and `snapshot_date` in this table is the day the event happened. The columns come from Collibra's documentation; they were not available on the reference instance to verify.
 
-### 26. How many people use Collibra each day?
+### 32. How many people use Collibra each day?
 ```sql
 SELECT snapshot_date AS day, count(DISTINCT user_id) AS active_users, count(*) AS views
 FROM fact_view_event
@@ -391,7 +487,7 @@ GROUP BY 1
 ORDER BY 1
 ```
 
-### 27. Which assets are viewed most?
+### 33. Which assets are viewed most?
 ```sql
 SELECT a.asset_display_name, a.asset_type_name,
        count(*) AS views, count(DISTINCT v.user_id) AS viewers
@@ -405,7 +501,7 @@ LIMIT 20
 ```
 *Reads as:* the content people actually read. Events on diagrams, dashboards or pages other than assets have no `asset_id` and are not counted here.
 
-### 28. Which content is never viewed?
+### 34. Which content is never viewed?
 ```sql
 SELECT a.asset_type_name, count(*) AS never_viewed
 FROM dim_asset a

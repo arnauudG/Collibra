@@ -30,6 +30,21 @@ Four properties of the raw tables make naive queries wrong:
 | Bridge | `bridge_asset_tag` | asset × tag | `asset_tag` |
 | Bridge | `bridge_complex_relation` | complex relation × leg | `complex_relation` |
 
+```mermaid
+erDiagram
+    dim_community ||--o{ dim_domain : community_id
+    dim_community ||--o{ bridge_community_ancestor : community_id
+    dim_domain ||--o{ dim_asset : domain_id
+    dim_asset ||--o{ fact_attribute : asset_id
+    dim_asset ||--o{ fact_relation : "asset_id1, asset_id2"
+    dim_asset ||--o{ fact_responsibility : asset_id
+    dim_user ||--o{ fact_responsibility : user_id
+    dim_asset ||--o{ bridge_asset_tag : asset_id
+    dim_asset ||--o{ bridge_complex_relation : asset_id
+    dim_asset ||--o{ fact_view_event : asset_id
+    dim_snapshot ||--o{ dim_asset : snapshot_date
+```
+
 Why a star? "How many Business Terms per domain, owned by whom, with or without a definition?" becomes one fact joined to a few small dimensions.
 
 ## 3. Decisions that matter

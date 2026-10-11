@@ -14,6 +14,7 @@ This documentation is **instance-independent**: it explains Insights in general 
 | 4 | [Known gaps](known-gaps.md) | avoid wrong totals: what the export omits and why | 10 min |
 | 5 | [Modeling guide](modeling.md) | understand the star schema and why | 10 min |
 | 6 | [Cookbook](cookbook.md) | answer real questions with tested SQL | as needed |
+| 7 | [Medallion architecture](medallion.md) | land, model and serve Insights as bronze/silver/gold data products | 15 min |
 | ★ | [Client playbook](client-playbook.md) | apply all of this at a new client, step by step | 1 hour |
 
 **Just want an answer?** Jump to the [cookbook](cookbook.md) (28 tested recipes), but read each "Watch out". **Wondering what this is good for?** Start with [use cases](use-cases.md).
@@ -48,6 +49,7 @@ This documentation is **instance-independent**: it explains Insights in general 
 | `store/` | read a snapshot locally | DuckDB only (no network) |
 | `model/` | star schema and conformance checks | `store` |
 | `diagnostics/` | evidence about an export: `offline` and `live` | `store` (+ the client for `live`) |
+| `lakehouse/` | write bronze (raw), silver (model) and gold as Parquet | `store`, `model` |
 | `cli.py` | `collibra-insights` | composes the layers above |
 
 So a scheduled downloader needs no DuckDB, and analysing a snapshot on a locked-down machine needs no network libraries.
@@ -62,4 +64,5 @@ collibra-insights explore  <snapshot>
 collibra-insights check    <snapshot>
 collibra-insights investigate <snapshot> [--live]
 collibra-insights query    <snapshot> --model --file q.sql
+collibra-insights export   <snapshot> --out lake [--layer gold] [--gold-config gold.json]
 ```

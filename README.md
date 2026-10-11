@@ -29,6 +29,7 @@ collibra-insights explore  snapshots/insights-2026-10-10
 collibra-insights check    snapshots/insights-2026-10-10
 collibra-insights investigate snapshots/insights-2026-10-10 --live
 collibra-insights query    snapshots/insights-2026-10-10 --model --file q.sql
+collibra-insights export   snapshots/insights-2026-10-10 --out lake      # bronze / silver / gold Parquet
 ```
 (`collibra-toolkit insights …` is the same as `collibra-insights …`. Point `explore`/`query` at a parent folder to load several snapshots at once.)
 
@@ -48,7 +49,7 @@ snap.sql("select asset_type_name, count(*) from dim_asset group by 1").fetchall(
 src/collibra_toolkit/
   client/        the generic layer: retry, errors, auth, pagination, core (CollibraClient), health
   cli/           `collibra-toolkit`: generic commands; initiatives are discovered by entry point
-  insights/      one initiative: tables, api/ (download), store/ (DuckDB), model/, diagnostics/, cli.py
+  insights/      one initiative: tables, api/ (download), store/ (DuckDB), model/, diagnostics/, lakehouse/, cli.py
 tests/           mirrors src/ (tests/client, tests/insights/...), shared fakes in tests/support/
 docs/            mirrors src/ (docs/client, docs/insights)
 ```

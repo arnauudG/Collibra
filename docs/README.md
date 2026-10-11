@@ -20,8 +20,9 @@ src/collibra_toolkit/
     tables.py              pure data: the documented tables
     api/                   download (needs the client; no DuckDB)
     store/                 local DuckDB snapshot (needs nothing; no network)
-    model/                 star schema + checks (needs store)
+    model/                 star schema, checks and gold tables (needs store)
     diagnostics/           offline (needs store) and live (needs store + client)
+    lakehouse/             bronze/silver/gold Parquet output (needs store + model)
     cli.py                 composition root: each command imports only the layers it needs
 tests/                     mirrors src/; tests/support/ holds the shared HTTP fakes
 docs/                      mirrors src/: docs/client/, docs/insights/
