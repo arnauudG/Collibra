@@ -9,7 +9,7 @@ A repeatable checklist. Allow about an hour for the first run. Nothing here assu
 | Licence and version | Collibra Insights licence, Platform 5.7+ |
 | Access | **Preferred:** an *integration* OAuth application registered by the client's administrator (Settings → OAuth Applications), with permission to download reporting data (confirmed sufficient for `ping` and `download` on the reference instance). Otherwise a dedicated technical user. Avoid personal accounts |
 | Where to run | Your machine or a client-approved host. Snapshots contain governance data and personal data: keep them off shared drives and out of git (`snapshots/` is git-ignored) |
-| Install | `pip install -e ".[dev]"` from this repository |
+| Install | `pip install -e ".[insights]"` from this repository (add `,dev` for the test tools). Downloading alone needs only `pip install -e .` |
 
 Set credentials without leaving them in your shell history. **OAuth (preferred):**
 ```bash
@@ -18,7 +18,7 @@ export COLLIBRA_CLIENT_ID=<application client id>
 read -s COLLIBRA_CLIENT_SECRET   # run on its own line; type or paste, then Enter (nothing is echoed)
 export COLLIBRA_CLIENT_SECRET
 ```
-or basic authentication with a technical user (`COLLIBRA_USER`, and `read -s COLLIBRA_PASSWORD` then `export COLLIBRA_PASSWORD`). **Run each `read -s` as its own command**: if more lines follow when you paste, they get swallowed as the secret. See [the client docs](../client.md#authentication) for details.
+or basic authentication with a technical user (`COLLIBRA_USER`, and `read -s COLLIBRA_PASSWORD` then `export COLLIBRA_PASSWORD`). **Run each `read -s` as its own command**: if more lines follow when you paste, they get swallowed as the secret. See [the client docs](../client/README.md#authentication) for details.
 
 ## 1. Check connectivity (1 min)
 

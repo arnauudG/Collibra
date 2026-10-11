@@ -1,21 +1,16 @@
 """Reusable Collibra tooling.
 
-``collibra_toolkit`` itself is the generic layer (authenticated REST client, typed errors,
-pagination). Each initiative lives in its own subpackage and composes the client, for
-example ``collibra_toolkit.insights``.
+``collibra_toolkit.client`` is the generic layer (authenticated REST client, typed errors,
+retries, pagination). Each initiative lives in its own subpackage and composes the client, for
+example ``collibra_toolkit.insights``. Names are exported lazily, so importing a sub-package
+does not import the others.
 """
 
-from .client import (
-    CollibraAuthError,
-    CollibraClient,
-    CollibraError,
-    CollibraHTTPError,
-    CollibraNotFound,
-    CollibraRateLimitError,
-    CollibraServerError,
-)
+from ._lazy import lazy_exports
 
-__all__ = [
+_EXPORTS = {name: ".client" for name in (
     "CollibraClient", "CollibraError", "CollibraHTTPError", "CollibraAuthError", "CollibraNotFound",
     "CollibraRateLimitError", "CollibraServerError",
-]
+)}
+__all__ = list(_EXPORTS)
+__getattr__, __dir__ = lazy_exports(__name__, _EXPORTS)

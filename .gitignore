@@ -6,3 +6,5 @@ __pycache__/
 snapshots/
 *.zip
 *.duckdb
+# diagnostic outputs contain instance data
+investigate*.txt

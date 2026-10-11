@@ -39,6 +39,19 @@ This documentation is **instance-independent**: it explains Insights in general 
 | Resource role | A role (Owner, Data Quality Manager…) that applies to a resource and its children through a responsibility |
 | Orphan | A row whose parent id does not exist in the exported tables |
 
+## How the code is layered
+
+| Folder (`src/collibra_toolkit/insights/`) | Job | Needs |
+|---|---|---|
+| `tables.py` | the documented tables | nothing |
+| `api/` | download snapshots | the generic client (no DuckDB) |
+| `store/` | read a snapshot locally | DuckDB only (no network) |
+| `model/` | star schema and conformance checks | `store` |
+| `diagnostics/` | evidence about an export: `offline` and `live` | `store` (+ the client for `live`) |
+| `cli.py` | `collibra-insights` | composes the layers above |
+
+So a scheduled downloader needs no DuckDB, and analysing a snapshot on a locked-down machine needs no network libraries.
+
 ## Commands
 
 ```bash

@@ -9,7 +9,7 @@ Reusable Python tooling for Collibra: a **generic REST client** that any initiat
 
 ```bash
 python3 -m venv ~/.venvs/collibra && . ~/.venvs/collibra/bin/activate    # keep the venv outside iCloud-synced folders
-pip install -e ".[dev]"
+pip install -e ".[insights]"      # generic client + Insights (adds DuckDB). Client only: pip install -e .
 ```
 
 ## Use
@@ -45,11 +45,14 @@ snap.sql("select asset_type_name, count(*) from dim_asset group by 1").fetchall(
 ## Layout
 
 ```
-src/collibra_toolkit/        generic client, errors, pagination, health check, CLI plumbing
-src/collibra_toolkit/insights/   Insights initiative (own client, explorer, model, diagnostics, CLI)
-tests/  tests/insights/      tests (fake HTTP, synthetic Parquet with real column names)
-docs/   docs/insights/       documentation
+src/collibra_toolkit/
+  client/        the generic layer: retry, errors, auth, pagination, core (CollibraClient), health
+  cli/           `collibra-toolkit`: generic commands; initiatives are discovered by entry point
+  insights/      one initiative: tables, api/ (download), store/ (DuckDB), model/, diagnostics/, cli.py
+tests/           mirrors src/ (tests/client, tests/insights/...), shared fakes in tests/support/
+docs/            mirrors src/ (docs/client, docs/insights)
 ```
+Each layer depends only on the layers below it; `tests/test_architecture.py` enforces it. See [`docs/README.md`](docs/README.md).
 
 ## Status (honest)
 

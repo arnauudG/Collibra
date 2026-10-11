@@ -1,17 +1,18 @@
-"""``collibra-insights`` (also ``collibra-toolkit insights``). Credentials come from env vars, never argv."""
+"""``collibra-insights`` (also ``collibra-toolkit insights``): the composition root of the initiative.
+
+Each command imports only the layers it needs, so ``download`` and ``tables-available`` work
+without DuckDB. Credentials come from environment variables, never from arguments.
+"""
 
 from __future__ import annotations
 
 import argparse
 import sys
 
-from ..cli_util import run
+from ..cli.util import run
 from ..client import CollibraClient, CollibraError
-from ..health import ping
-from .client import ENDPOINTS, InsightsClient
-from .investigate import live_report, snapshot_report
-from .model import build_model, check_model
-from .snapshot import Snapshot
+from ..client.health import ping
+from .api import ENDPOINTS, InsightsClient
 from .tables import DOCUMENTED_TABLES
 
 
@@ -48,6 +49,15 @@ def _parser() -> argparse.ArgumentParser:
     return p
 
 
+def _store():
+    """The local-analysis layer needs DuckDB, an optional extra."""
+    try:
+        from .store import Snapshot
+    except ImportError as exc:  # pragma: no cover - depends on the environment
+        raise CollibraError("this command needs DuckDB: pip install 'collibra-toolkit[insights]'") from exc
+    return Snapshot
+
+
 def _tables_available(args) -> None:
     client = InsightsClient.from_env()
     endpoints = sorted(ENDPOINTS) if args.endpoint == "both" else [args.endpoint]
@@ -64,8 +74,10 @@ def _tables_available(args) -> None:
 
 
 def _query(args) -> None:
-    snap = Snapshot(args.path)
+    snap = _store()(args.path)
     if args.model:
+        from .model import build_model
+
         build_model(snap)
     sql = (sys.stdin.read() if args.file == "-" else open(args.file).read()) if args.file else args.sql
     if not sql:
@@ -82,25 +94,29 @@ def _main(argv: list[str] | None = None) -> None:
         print(InsightsClient.from_env().download_snapshot(args.date, args.dest, args.endpoint))
     elif args.cmd == "tables-available":
         _tables_available(args)
+    elif args.cmd == "ping":
+        print("\n".join(ping(CollibraClient.from_env())))
+    elif args.cmd == "query":
+        _query(args)
     elif args.cmd == "explore":
-        snap = Snapshot(args.path)
+        snap = _store()(args.path)
         print(snap.report())
         if snap.missing():
             print("\nCore tables absent:", ", ".join(snap.missing()))
         if snap.optional_absent():
             print("Optional documented tables absent:", ", ".join(snap.optional_absent()))
-    elif args.cmd == "query":
-        _query(args)
     elif args.cmd == "check":
-        for name, n in check_model(Snapshot(args.path)).items():
+        from .model import check_model
+
+        for name, n in check_model(_store()(args.path)).items():
             print(f"{'OK  ' if n == 0 else 'WARN'} {name}: {n}")
     elif args.cmd == "investigate":
-        snap = Snapshot(args.path)
+        from .diagnostics import live_report, snapshot_report
+
+        snap = _store()(args.path)
         print(snapshot_report(snap))
         if args.live:
             print("\n" + live_report(CollibraClient.from_env(), snap))
-    elif args.cmd == "ping":
-        print("\n".join(ping(CollibraClient.from_env())))
 
 
 def main(argv: list[str] | None = None) -> None:
