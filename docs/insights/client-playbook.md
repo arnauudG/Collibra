@@ -25,7 +25,7 @@ or basic authentication with a technical user (`COLLIBRA_USER`, and `read -s COL
 ```bash
 collibra-toolkit ping
 ```
-Four lines, no content. A 401 is credentials; a 403 is a missing permission or licence.
+Five lines, no content; the last says which authentication method was really used, so check it matches what you intended (an empty secret silently falls back to basic). A 401 is credentials; a 403 is a missing permission or licence.
 
 ## 2. See what the client's ZIP contains (2 min)
 
@@ -70,4 +70,5 @@ Give the client: the export-vs-UI reconciliation from step 4, the list of known 
 | 403 on download | the user lacks permission, or no Insights licence |
 | 404 on download | snapshot not generated yet (try the day before), or outside retention |
 | `ModuleNotFoundError` after `git pull` | the editable install broke; run `pip install -e .` again. On macOS keep the virtualenv outside iCloud-synced folders such as Desktop |
+| `429` or `5xx` errors | the client already retries with backoff (up to 4 times, honouring `Retry-After`); a persistent `CollibraRateLimitError`/`CollibraServerError` means back off for longer or ask the client about rate limits |
 | Retention warning | the date is outside the documented tiers; the request may still work |

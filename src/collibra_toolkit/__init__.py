@@ -5,6 +5,17 @@ pagination). Each initiative lives in its own subpackage and composes the client
 example ``collibra_toolkit.insights``.
 """
 
-from .client import CollibraAuthError, CollibraClient, CollibraError, CollibraHTTPError, CollibraNotFound
+from .client import (
+    CollibraAuthError,
+    CollibraClient,
+    CollibraError,
+    CollibraHTTPError,
+    CollibraNotFound,
+    CollibraRateLimitError,
+    CollibraServerError,
+)
 
-__all__ = ["CollibraClient", "CollibraError", "CollibraHTTPError", "CollibraAuthError", "CollibraNotFound"]
+__all__ = [
+    "CollibraClient", "CollibraError", "CollibraHTTPError", "CollibraAuthError", "CollibraNotFound",
+    "CollibraRateLimitError", "CollibraServerError",
+]

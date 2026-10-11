@@ -17,4 +17,5 @@ def ping(client: CollibraClient) -> list[str]:
         f"envelope keys: {sorted(page)}",
         f"total communities: {page.get('total')}",
         f"paginate(page_size=2), first 5 items: got {len(items)}, unique ids {len(set(ids))}",
+        f"auth method actually used: {client.auth_method}",
     ]

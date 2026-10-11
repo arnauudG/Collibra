@@ -7,8 +7,11 @@ Knows nothing about Insights. Domain-specific clients (see ``insights.py``) take
 from __future__ import annotations
 
 import os
+import random
 import time
 from collections.abc import Callable, Iterator, Mapping
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from typing import Any
 
 import requests
@@ -16,6 +19,8 @@ import requests
 API_ROOT = "/rest/2.0"
 TOKEN_PATH = "/rest/oauth/v2/token"  # OAuth token endpoint (not under /rest/2.0)
 _TOKEN_REFRESH_MARGIN = 60  # seconds before expiry at which a cached token is replaced
+_IDEMPOTENT = {"GET", "HEAD", "OPTIONS", "PUT", "DELETE"}  # safe to repeat after a 5xx or a lost connection
+_RETRY_STATUS = {429, 500, 502, 503, 504}
 
 
 class CollibraError(Exception):
@@ -36,11 +41,42 @@ class CollibraNotFound(CollibraHTTPError):
     """404."""
 
 
+class CollibraRateLimitError(CollibraHTTPError):
+    """429 that persisted after all retries. ``retry_after`` is the server's hint in seconds, if any."""
+
+    def __init__(self, status_code: int, message: str, retry_after: float | None = None):
+        super().__init__(status_code, message)
+        self.retry_after = retry_after
+
+
+class CollibraServerError(CollibraHTTPError):
+    """5xx that persisted after all retries."""
+
+
+def parse_retry_after(value: str | None, now: datetime | None = None) -> float | None:
+    """``Retry-After`` is either a number of seconds or an HTTP date. Returns seconds (>= 0) or None."""
+    if not value:
+        return None
+    value = value.strip()
+    if value.isdigit():
+        return float(value)
+    try:
+        when = parsedate_to_datetime(value)
+    except (TypeError, ValueError):
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return max((when - (now or datetime.now(timezone.utc))).total_seconds(), 0.0)
+
+
 def _http_error(resp: requests.Response) -> CollibraHTTPError:
-    cls = {401: CollibraAuthError, 403: CollibraAuthError, 404: CollibraNotFound}.get(
-        resp.status_code, CollibraHTTPError
-    )
-    return cls(resp.status_code, (resp.text or "")[:200])
+    message = (resp.text or "")[:200]
+    if resp.status_code == 429:
+        return CollibraRateLimitError(429, message, parse_retry_after((getattr(resp, "headers", None) or {}).get("Retry-After")))
+    if resp.status_code >= 500:
+        return CollibraServerError(resp.status_code, message)
+    cls = {401: CollibraAuthError, 403: CollibraAuthError, 404: CollibraNotFound}.get(resp.status_code, CollibraHTTPError)
+    return cls(resp.status_code, message)
 
 
 class CollibraClient:
@@ -63,11 +99,18 @@ class CollibraClient:
         client_id: str | None = None,
         client_secret: str | None = None,
         clock: Callable[[], float] = time.monotonic,
+        retries: int = 4,
+        backoff: float = 0.5,
+        max_wait: float = 60.0,
+        sleep: Callable[[float], None] = time.sleep,
+        jitter: Callable[[float], float] = lambda delay: random.uniform(delay / 2, delay),
     ):
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self.session = session or requests.Session()
         self._clock = clock
+        self.retries, self.backoff, self.max_wait = retries, backoff, max_wait
+        self._sleep, self._jitter = sleep, jitter
         self._oauth: tuple[str, str] | None = None
         self._access_token: str | None = None
         self._token_expires_at = 0.0
@@ -96,6 +139,11 @@ class CollibraClient:
             client_secret=env.get("COLLIBRA_CLIENT_SECRET"),
             **kwargs,
         )
+
+    @property
+    def auth_method(self) -> str:
+        """Which credentials this client really uses: ``oauth``, ``token`` or ``basic``."""
+        return "oauth" if self._oauth else "token" if "Authorization" in self.session.headers else "basic"
 
     # ------------------------------------------------------------------ OAuth
 
@@ -134,31 +182,54 @@ class CollibraClient:
         """``path`` is relative to /rest/2.0 (e.g. ``/communities``)."""
         return f"{self.base_url}{API_ROOT}/{path.lstrip('/')}"
 
+    def _wait(self, attempt: int, retry_after: float | None) -> None:
+        """Sleep before retry number ``attempt`` (0-based): the server's hint, else exponential backoff."""
+        delay = retry_after if retry_after is not None else self._jitter(min(self.max_wait, self.backoff * 2**attempt))
+        self._sleep(min(delay, self.max_wait))
+
     def request(self, method: str, path: str, **kwargs: Any) -> requests.Response:
         """Send a request; map failures to ``CollibraError`` subclasses. Redirects are followed.
 
-        With OAuth, an expired or revoked token is replaced once before giving up on a 401.
+        * OAuth: an expired or revoked token is replaced once before giving up on a 401.
+        * 429 is retried for every method (the request was not processed); 500/502/503/504 and
+          lost connections only for methods that are safe to repeat. Backoff is exponential
+          with jitter, ``Retry-After`` is honoured, waits are capped at ``max_wait``.
         """
         kwargs.setdefault("timeout", self.timeout)
         kwargs.setdefault("allow_redirects", True)
-        for attempt in (1, 2):
+        safe = method.upper() in _IDEMPOTENT
+        attempt, force_token, refreshed = 0, False, False
+        while True:
             call_kwargs = dict(kwargs)
             if self._oauth:
                 headers = dict(call_kwargs.get("headers") or {})
-                headers["Authorization"] = f"Bearer {self._bearer(force_refresh=attempt == 2)}"
+                headers["Authorization"] = f"Bearer {self._bearer(force_refresh=force_token)}"
                 call_kwargs["headers"] = headers
+                force_token = False
             try:
                 resp = self.session.request(method, self.url(path), **call_kwargs)
             except requests.RequestException as exc:
+                transient = isinstance(exc, (requests.ConnectionError, requests.Timeout)) and not isinstance(exc, requests.exceptions.SSLError)
+                if safe and transient and attempt < self.retries:
+                    self._wait(attempt, None)
+                    attempt += 1
+                    continue
                 # class name only: the message can embed a pre-signed URL
                 raise CollibraError(f"request failed: {type(exc).__name__}") from exc
-            if resp.status_code == 401 and self._oauth and attempt == 1:
+            if resp.status_code == 401 and self._oauth and not refreshed:
+                refreshed, force_token = True, True
                 resp.close()
+                continue
+            retryable = resp.status_code == 429 or (resp.status_code in _RETRY_STATUS and safe)
+            if retryable and attempt < self.retries:
+                hint = parse_retry_after((getattr(resp, "headers", None) or {}).get("Retry-After"))
+                resp.close()
+                self._wait(attempt, hint)
+                attempt += 1
                 continue
             if resp.status_code >= 400:
                 raise _http_error(resp)
             return resp
-        raise CollibraError("unreachable")  # pragma: no cover
 
     def get_json(self, path: str, params: Mapping[str, Any] | None = None) -> Any:
         return self.request("GET", path, params=params).json()

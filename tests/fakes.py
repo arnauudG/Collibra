@@ -5,10 +5,11 @@ import zipfile
 
 
 class FakeResp:
-    def __init__(self, status=200, content=b"", payload=None):
+    def __init__(self, status=200, content=b"", payload=None, headers=None):
         self.status_code, self.content, self._payload = status, content, payload
         self.text = content.decode("latin1") if isinstance(content, bytes) else str(content)
         self.closed = False
+        self.headers = headers or {}
 
     def json(self):
         return self._payload
@@ -31,7 +32,10 @@ class FakeSession:
         self.calls.append((method, url, kw))
         if self.raises:
             raise self.raises
-        return self.responses.pop(0) if len(self.responses) > 1 else self.responses[0]
+        r = self.responses.pop(0) if len(self.responses) > 1 else self.responses[0]
+        if isinstance(r, Exception):
+            raise r
+        return r
 
 
 def zip_bytes(members):

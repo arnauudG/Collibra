@@ -13,7 +13,7 @@ from collibra_toolkit import (
 
 def make(*responses, **kw):
     sess = FakeSession(*responses, **kw)
-    return CollibraClient("https://x.collibra.com/", username="u", password="p", session=sess), sess
+    return CollibraClient("https://x.collibra.com/", username="u", password="p", session=sess, sleep=lambda s: None), sess
 
 
 def test_requires_credentials():
@@ -47,7 +47,7 @@ def test_url_building_and_default_options():
 
 @pytest.mark.parametrize(
     "status,exc",
-    [(401, CollibraAuthError), (403, CollibraAuthError), (404, CollibraNotFound), (500, CollibraHTTPError)],
+    [(401, CollibraAuthError), (403, CollibraAuthError), (404, CollibraNotFound), (418, CollibraHTTPError)],
 )
 def test_http_errors_are_typed(status, exc):
     c, _ = make(FakeResp(status, b"nope"))
@@ -155,7 +155,7 @@ class Clock:
 def oauth(routes, clock=None):
     sess = RoutedSession(routes)
     client = CollibraClient("https://x.collibra.com", client_id="app-id", client_secret="s3cret",
-                            session=sess, clock=clock or Clock())
+                            session=sess, clock=clock or Clock(), sleep=lambda s: None)
     return client, sess
 
 
@@ -209,7 +209,7 @@ def test_oauth_token_errors_are_typed_and_never_contain_the_secret():
         c.get_json("/communities")
 
     boom = CollibraClient("https://x", client_id="i", client_secret="s3cret",
-                          session=FakeSession(FakeResp(), raises=requests.ConnectionError("s3cret in message")))
+                          session=FakeSession(FakeResp(), raises=requests.ConnectionError("s3cret in message")), sleep=lambda s: None)
     with pytest.raises(CollibraError) as info:
         boom.get_json("/communities")
     assert "s3cret" not in str(info.value)
@@ -226,3 +226,101 @@ def test_oauth_from_env_and_precedence():
     sess2 = FakeSession(FakeResp())
     CollibraClient.from_env(env2, session=sess2)
     assert sess2.headers["Authorization"] == "Bearer static"
+
+
+# ------------------------------------------------------------------ retries: 429 and 5xx
+
+from collibra_toolkit import CollibraRateLimitError, CollibraServerError  # noqa: E402
+from collibra_toolkit.client import parse_retry_after  # noqa: E402
+
+
+def retrying(*responses, **kw):
+    """Client with a recording sleeper and no jitter, so waits are exact."""
+    slept = []
+    sess = FakeSession(*responses, **kw)
+    client = CollibraClient("https://x.collibra.com", username="u", password="p", session=sess,
+                            sleep=slept.append, jitter=lambda d: d)
+    return client, sess, slept
+
+
+def test_429_is_retried_and_retry_after_is_honoured():
+    first = FakeResp(429, b"slow down", headers={"Retry-After": "2"})
+    c, sess, slept = retrying(first, FakeResp(200, payload={"ok": 1}))
+    assert c.get_json("/x") == {"ok": 1}
+    assert slept == [2.0] and len(sess.calls) == 2 and first.closed
+
+
+def test_backoff_is_exponential_and_capped_then_a_typed_error():
+    c, sess, slept = retrying(FakeResp(503, b"down"))
+    with pytest.raises(CollibraServerError) as info:
+        c.get_json("/x")
+    assert info.value.status_code == 503
+    assert slept == [0.5, 1.0, 2.0, 4.0] and len(sess.calls) == 5      # 1 try + 4 retries
+
+    c, _, slept = retrying(FakeResp(429, b"", headers={"Retry-After": "9999"}))
+    with pytest.raises(CollibraRateLimitError) as info:
+        c.get_json("/x")
+    assert info.value.retry_after == 9999.0
+    assert max(slept) == 60.0                                          # never sleeps longer than max_wait
+
+
+def test_5xx_is_retried_for_safe_methods_only_but_429_for_all():
+    c, sess, slept = retrying(FakeResp(503, b"down"))
+    with pytest.raises(CollibraServerError):
+        c.request("POST", "/x")
+    assert len(sess.calls) == 1 and slept == []                       # a POST may have been processed: not repeated
+
+    c, sess, slept = retrying(FakeResp(429, b"", headers={"Retry-After": "1"}), FakeResp(200, payload={}))
+    c.request("POST", "/x")
+    assert len(sess.calls) == 2                                       # 429 means it was not processed: safe
+
+    c, sess, _ = retrying(FakeResp(500, b"err"), FakeResp(200, payload={}))
+    c.request("DELETE", "/x")
+    assert len(sess.calls) == 2
+
+
+def test_client_errors_are_never_retried():
+    for status in (400, 403, 404):
+        c, sess, slept = retrying(FakeResp(status, b"no"))
+        with pytest.raises(CollibraHTTPError):
+            c.get_json("/x")
+        assert len(sess.calls) == 1 and slept == []
+
+
+def test_lost_connections_are_retried_but_ssl_errors_are_not():
+    c, sess, slept = retrying(requests.ConnectionError("reset"), requests.Timeout("slow"), FakeResp(200, payload={"ok": 1}))
+    assert c.get_json("/x") == {"ok": 1} and slept == [0.5, 1.0]
+
+    c, sess, slept = retrying(requests.exceptions.SSLError("bad cert"), FakeResp(200, payload={}))
+    with pytest.raises(CollibraError, match="SSLError"):
+        c.get_json("/x")
+    assert len(sess.calls) == 1 and slept == []
+
+    c, sess, _ = retrying(requests.ConnectionError("reset"), FakeResp(200, payload={}))
+    with pytest.raises(CollibraError):
+        c.request("POST", "/x")                                         # not repeated: it may have been sent
+    assert len(sess.calls) == 1
+
+
+def test_oauth_refresh_and_retries_work_together():
+    sess = RoutedSession({TOKEN: [token_resp("a"), token_resp("b")],
+                          ITEMS: [FakeResp(401, b"expired"), FakeResp(429, b"", headers={"Retry-After": "1"}), FakeResp(200, payload={"ok": 1})]})
+    slept = []
+    c = CollibraClient("https://x.collibra.com", client_id="i", client_secret="s", session=sess, clock=Clock(), sleep=slept.append)
+    assert c.get_json("/communities") == {"ok": 1} and slept == [1.0]
+
+
+def test_parse_retry_after_formats():
+    assert parse_retry_after("5") == 5.0
+    assert parse_retry_after("Wed, 21 Oct 2015 07:28:00 GMT") == 0.0    # a date in the past means: retry now
+    assert parse_retry_after("garbage") is None and parse_retry_after(None) is None
+
+
+def test_auth_method_reports_the_credentials_really_used():
+    s = FakeSession(FakeResp())
+    assert CollibraClient("https://x", client_id="i", client_secret="s", session=s).auth_method == "oauth"
+    assert CollibraClient("https://x", token="t", session=FakeSession(FakeResp())).auth_method == "token"
+    assert CollibraClient("https://x", username="u", password="p", session=FakeSession(FakeResp())).auth_method == "basic"
+    # an empty secret silently falls back: this is exactly why ping prints the method
+    env = {"COLLIBRA_URL": "https://x", "COLLIBRA_CLIENT_ID": "i", "COLLIBRA_CLIENT_SECRET": "", "COLLIBRA_USER": "u", "COLLIBRA_PASSWORD": "p"}
+    assert CollibraClient.from_env(env, session=FakeSession(FakeResp())).auth_method == "basic"
