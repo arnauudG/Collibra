@@ -3,20 +3,26 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "collibra-insights"
-version = "0.1.0"
-description = "Small client for Collibra's Insights Data Access snapshots, with a local DuckDB explorer."
+name = "collibra-toolkit"
+version = "0.2.0"
+description = "Reusable Collibra tooling: a generic REST client plus initiative packages (Insights Data Access first)."
 requires-python = ">=3.10"
-dependencies = ["requests>=2.31", "duckdb>=1.0"]
+dependencies = ["requests>=2.31"]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "pyarrow>=15"]
+insights = ["duckdb>=1.0"]          # local analysis of Insights snapshots (not needed to download them)
+dev = ["collibra-toolkit[insights]", "pytest>=8", "pyarrow>=15"]
 
 [project.scripts]
-collibra-insights = "collibra_insights.cli:main"
+collibra-toolkit = "collibra_toolkit.cli:main"
+collibra-insights = "collibra_toolkit.insights.cli:main"
+
+[project.entry-points."collibra_toolkit.initiatives"]
+insights = "collibra_toolkit.insights.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+include = ["collibra_toolkit*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
