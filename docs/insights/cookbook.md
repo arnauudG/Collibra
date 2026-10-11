@@ -18,6 +18,21 @@ Each recipe is a business question, a query on the [model](modeling.md), and the
 
 ---
 
+## Six shapes cover almost every question
+
+| Shape | Query pattern | Example |
+|---|---|---|
+| **Count by** | `dim_asset` grouped by type, status, domain or community | assets per domain |
+| **Coverage (% with)** | `dim_asset` LEFT JOIN a *distinct* set from `fact_attribute` or `fact_responsibility`; matched ÷ total | % of terms with a definition |
+| **Gap (none of)** | `NOT EXISTS` anti-join against a fact | terms without an owner, assets without relations |
+| **Over time** | the same query with `snapshot_date` added to the `GROUP BY` and to every join | coverage per month |
+| **Connectedness** | `fact_relation`, testing both `asset_id1` and `asset_id2` (one direction is stored) | hubs, isolated assets, N-hop reach |
+| **Who / how much** | `fact_responsibility` filtered to `asset_resolution = 'in_export'`, joined to `dim_user` | workload per person |
+
+Pick the shape first, then adapt the nearest recipe.
+
+---
+
 ## Inventory
 
 ### 1. How many assets of each type and status?

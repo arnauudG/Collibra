@@ -2,6 +2,23 @@
 
 Sources: Collibra's official *Entity relationship diagram* and *Insights tables* pages, **checked against a real snapshot** from a reference instance. Where the two differ or where something was verified, it is said. Types are simplified (text, number, date…); the real files use DuckDB/Parquet types.
 
+## How the data is delivered
+
+Insights Data Access is Collibra's **paid add-on that copies your reporting data every night** into a snapshot you cannot query inside Collibra. A REST endpoint returns a **ZIP of Parquet files** for a chosen date, which you load into a warehouse (Athena, BigQuery, Databricks Lakebase) or, with this toolkit, query locally. Prerequisites: Collibra Platform **5.7+** and an **Insights licence** (Usage Analytics, the free dashboard, is a different product).
+
+| Endpoint (relative to `/rest/2.0`) | Notes |
+|---|---|
+| `/reporting/insights/directDownload?snapshotDate=YYYY-MM-DD&format=zip` | Recommended. Redirects to a **pre-signed storage URL valid ~60 s**, so the client must follow redirects |
+| `/reporting/insights/download?...` | Legacy; documented as soon to be deprecated |
+
+* **Timing:** processed in **UTC**; "ready" times vary by region (roughly 05:00-13:00 UTC; see Collibra's *Reporting data* page). Request **yesterday's** snapshot.
+* **Retention:** every daily snapshot for **31 days**, then month-ends for 12 months, then year-ends indefinitely.
+* **Eight tables** are loaded by Collibra's setup guides; a ninth, `view_events`, is documented but optional.
+
+Sources: Collibra's *Insights Data Access*, *Reporting data*, *Insights tables*, *Entity relationship diagram* and *Set up Insights* pages.
+
+---
+
 ## How the tables connect
 
 ```mermaid
@@ -226,3 +243,17 @@ Key: `(snapshot_date, event_id)`. Official: "all of the view events … as measu
 | `page_path`, `page_parameters`, `tab_name` | The page, its query string, and the tab (Overview, History…) |
 
 Only events started **from the Collibra user interface** are counted (not API, Edge or mobile), and only since Usage Analytics was enabled (introduced in Collibra 2022.11; data on communities, domains, dashboards and diagrams since January 2024). Usernames and sessions are personal data.
+
+---
+
+## Glossary
+
+| Term | Meaning |
+|---|---|
+| Snapshot | One day's copy of the data, delivered as a ZIP of Parquet files |
+| Grain | What one row of a table represents |
+| Dimension / fact | A table of things you group by (assets, domains, users) / of events or measurements you count |
+| EAV | Entity-attribute-value: one generic table holds every attribute of every asset |
+| Meta object | A built-in Collibra helper object hidden from the normal API list; partly present in the export |
+| Resource role | A role (Owner, Data Quality Manager…) that applies to a resource and its children through a responsibility |
+| Orphan | A row whose parent id does not exist in the exported tables |

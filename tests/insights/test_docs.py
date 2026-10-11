@@ -36,11 +36,11 @@ def _slug(heading: str) -> str:
     return re.sub(r"[^\w\- ]", "", heading.lower()).replace(" ", "-")
 
 
-def test_use_case_links_point_at_real_recipes():
+def test_approach_links_point_at_real_recipes():
     anchors = {_slug(h) for h in re.findall(r"^### (.+)$", COOKBOOK.read_text(), flags=re.M)}
-    page = (COOKBOOK.parent / "use-cases.md").read_text()
+    page = (COOKBOOK.parent / "approach.md").read_text()
     links = re.findall(r"\(cookbook\.md#([^)]+)\)", page)
-    assert len(links) >= 20
+    assert len(links) >= 30
     missing = [a for a in links if a not in anchors]
     assert not missing, f"stale recipe links: {missing}"
 

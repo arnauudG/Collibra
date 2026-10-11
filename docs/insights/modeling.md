@@ -87,3 +87,16 @@ CLI: `collibra-insights query <path> --model --file q.sql`.
 | `community_parent_mismatch` | 0 (the second-deepest level equals `parent_community_id`) |
 
 Anything unexpected is worth a look with `collibra-insights investigate`.
+
+## 6. Using the model outside DuckDB
+
+The toolkit can write silver and gold as Hive-partitioned Parquet (`collibra-insights export --help`), which any lakehouse engine registers as an external table partitioned by `snapshot_date`; most clients read that and need no translation. If the client prefers to run the transformations in their own engine, the SQL here is **DuckDB dialect**. Translate:
+
+| DuckDB construct | Translate to |
+|---|---|
+| `SELECT DISTINCT ON (a, b) …` (`dim_community`, `dim_user`) | `ROW_NUMBER() OVER (PARTITION BY a, b ORDER BY …) = 1` |
+| `string_agg(x, ',' ORDER BY y)` | the engine's ordered aggregate |
+| `… - INTERVAL 365 DAY` | the engine's date arithmetic |
+| `any_value`, `hash`, `::INT` casts | `ANY_VALUE`/`MIN`, the engine's hash, `CAST(… AS INT)` |
+
+Not tried on any specific engine; check Hive-partition support and type mapping on the first load.
